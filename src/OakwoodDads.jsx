@@ -53,20 +53,26 @@ function weightedSample(items, k) {
   return out;
 }
 
-// ── OWL LOGO ─────────────────────────────────────────────────────────────────
+// ── OWL LOGO — Oakwood Owls (red + yellow) ───────────────────────────────────
+const OWL_RED = "#D6001C";
+const OWL_DARK = "#8B0010";
+const OWL_YELLOW = "#FFC72C";
+
 export function OwlLogo({ size = 40 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" style={{display:"block",flexShrink:0}}>
-      <path d="M12 14 L16 5 L21 16 Z" fill={OD.black}/>
-      <path d="M52 14 L48 5 L43 16 Z" fill={OD.black}/>
-      <path d="M10 24 Q10 12 32 12 Q54 12 54 24 L54 44 Q54 58 32 60 Q10 58 10 44 Z" fill={OD.black}/>
-      <circle cx="23" cy="30" r="8" fill={OD.white}/>
-      <circle cx="41" cy="30" r="8" fill={OD.white}/>
-      <circle cx="23" cy="30" r="3.5" fill={OD.red}/>
-      <circle cx="41" cy="30" r="3.5" fill={OD.red}/>
-      <circle cx="24.5" cy="28.5" r="1" fill={OD.white}/>
-      <circle cx="42.5" cy="28.5" r="1" fill={OD.white}/>
-      <path d="M29 40 L35 40 L32 47 Z" fill={OD.red}/>
+      <path d="M12 14 Q6 4 4 2 Q12 6 18 14 Q20 18 18 22 Z" fill={OWL_RED} stroke={OD.black} strokeWidth="1.4"/>
+      <path d="M52 14 Q58 4 60 2 Q52 6 46 14 Q44 18 46 22 Z" fill={OWL_RED} stroke={OD.black} strokeWidth="1.4"/>
+      <path d="M8 24 Q8 12 32 12 Q56 12 56 24 L56 46 Q56 60 32 62 Q8 60 8 46 Z" fill={OWL_RED} stroke={OD.black} strokeWidth="1.6"/>
+      <path d="M14 26 Q20 18 32 18 Q44 18 50 26 Q44 30 32 35 Q20 30 14 26 Z" fill={OWL_DARK}/>
+      <circle cx="22" cy="30" r="8" fill={OWL_YELLOW} stroke={OD.black} strokeWidth="1.4"/>
+      <circle cx="42" cy="30" r="8" fill={OWL_YELLOW} stroke={OD.black} strokeWidth="1.4"/>
+      <circle cx="22" cy="31" r="3.4" fill={OD.black}/>
+      <circle cx="42" cy="31" r="3.4" fill={OD.black}/>
+      <circle cx="23.4" cy="29.8" r="1" fill={OD.white}/>
+      <circle cx="43.4" cy="29.8" r="1" fill={OD.white}/>
+      <path d="M28 40 L36 40 L32 48 Z" fill={OWL_YELLOW} stroke={OD.black} strokeWidth="1"/>
+      <path d="M24 52 Q28 55 32 52 Q36 55 40 52" fill="none" stroke={OWL_DARK} strokeWidth="0.9"/>
     </svg>
   );
 }
