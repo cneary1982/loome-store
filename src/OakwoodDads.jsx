@@ -1,0 +1,533 @@
+import { useState, useEffect } from "react";
+
+// ── PALETTE ──────────────────────────────────────────────────────────────────
+const OD = {
+  black:"#0A0A0A", ink:"#1A1A1A", graphite:"#2A2A2A",
+  red:"#D6001C", redD:"#A60016", redL:"#FCE5E8",
+  white:"#FFFFFF", cream:"#FAFAFA", paper:"#F5F5F5",
+  border:"#E5E5E5", borderD:"#D0D0D0",
+  muted:"#6B6B6B", mutedL:"#999999",
+  green:"#2E8A54", amber:"#E8973A",
+};
+
+const STORE_KEY = "oakwood_dads_v1";
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+const uid = () => Math.random().toString(36).slice(2, 10);
+const fmtDate = ts => new Date(ts).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" });
+const fmtScore = s => {
+  const n = Math.round(s * 100) / 100;
+  if (n === 0) return "0";
+  return (n > 0 ? "+" : "") + (Math.round(n * 100) / 100).toString();
+};
+const initials = name => name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join("").toUpperCase();
+
+const defaultState = () => ({
+  members: [],
+  dinners: [],
+  activeDinnerId: null,
+  defaultSize: 6,
+});
+
+const loadState = () => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+    return raw ? { ...defaultState(), ...raw } : defaultState();
+  } catch { return defaultState(); }
+};
+const saveState = s => localStorage.setItem(STORE_KEY, JSON.stringify(s));
+
+const weightFor = score => Math.pow(0.55, score);
+function weightedSample(items, k) {
+  const pool = items.map(it => ({ it, w: Math.max(0.0001, weightFor(it.score)) }));
+  const out = [];
+  while (out.length < k && pool.length) {
+    const total = pool.reduce((s, p) => s + p.w, 0);
+    let r = Math.random() * total;
+    let i = 0;
+    for (; i < pool.length; i++) { r -= pool[i].w; if (r <= 0) break; }
+    if (i >= pool.length) i = pool.length - 1;
+    out.push(pool[i].it);
+    pool.splice(i, 1);
+  }
+  return out;
+}
+
+// ── OWL LOGO — Oakwood Owls (red + yellow) ───────────────────────────────────
+const OWL_RED = "#D6001C";
+const OWL_DARK = "#8B0010";
+const OWL_YELLOW = "#FFC72C";
+
+export function OwlLogo({ size = 40 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" style={{display:"block",flexShrink:0}}>
+      <path d="M12 14 Q6 4 4 2 Q12 6 18 14 Q20 18 18 22 Z" fill={OWL_RED} stroke={OD.black} strokeWidth="1.4"/>
+      <path d="M52 14 Q58 4 60 2 Q52 6 46 14 Q44 18 46 22 Z" fill={OWL_RED} stroke={OD.black} strokeWidth="1.4"/>
+      <path d="M8 24 Q8 12 32 12 Q56 12 56 24 L56 46 Q56 60 32 62 Q8 60 8 46 Z" fill={OWL_RED} stroke={OD.black} strokeWidth="1.6"/>
+      <path d="M14 26 Q20 18 32 18 Q44 18 50 26 Q44 30 32 35 Q20 30 14 26 Z" fill={OWL_DARK}/>
+      <circle cx="22" cy="30" r="8" fill={OWL_YELLOW} stroke={OD.black} strokeWidth="1.4"/>
+      <circle cx="42" cy="30" r="8" fill={OWL_YELLOW} stroke={OD.black} strokeWidth="1.4"/>
+      <circle cx="22" cy="31" r="3.4" fill={OD.black}/>
+      <circle cx="42" cy="31" r="3.4" fill={OD.black}/>
+      <circle cx="23.4" cy="29.8" r="1" fill={OD.white}/>
+      <circle cx="43.4" cy="29.8" r="1" fill={OD.white}/>
+      <path d="M28 40 L36 40 L32 48 Z" fill={OWL_YELLOW} stroke={OD.black} strokeWidth="1"/>
+      <path d="M24 52 Q28 55 32 52 Q36 55 40 52" fill="none" stroke={OWL_DARK} strokeWidth="0.9"/>
+    </svg>
+  );
+}
+
+function Brand({ size = 44 }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:10}}>
+      <OwlLogo size={size}/>
+      <div style={{lineHeight:1.05}}>
+        <div style={{fontSize:15,fontWeight:900,color:OD.black,letterSpacing:".04em"}}>2038 OAKWOOD</div>
+        <div style={{fontSize:11,fontWeight:800,color:OD.red,letterSpacing:".22em",marginTop:1}}>DADS</div>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN ─────────────────────────────────────────────────────────────────────
+export default function OakwoodDads() {
+  const [state, setState] = useState(loadState);
+  const [tab, setTab] = useState("dinner");
+  const [toast, setToast] = useState("");
+
+  useEffect(() => { saveState(state); }, [state]);
+
+  const showToast = m => { setToast(m); setTimeout(()=>setToast(""), 2400); };
+  const update = patch => setState(s => ({ ...s, ...(typeof patch === "function" ? patch(s) : patch) }));
+
+  const activeDinner = state.dinners.find(d => d.id === state.activeDinnerId);
+
+  return (
+    <div style={{minHeight:"100vh",background:OD.cream,paddingBottom:60,fontFamily:"'DM Sans',sans-serif"}}>
+      <style>{`
+        .od-card{background:${OD.white};border:1px solid ${OD.border};border-radius:10px;padding:18px;}
+        .od-btn{padding:9px 16px;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;border:none;transition:transform .08s,background .15s;font-family:inherit;}
+        .od-btn:active{transform:translateY(1px);}
+        .od-btn:disabled{opacity:.4;cursor:not-allowed;}
+        .od-btn-primary{background:${OD.red};color:${OD.white};}
+        .od-btn-primary:hover:not(:disabled){background:${OD.redD};}
+        .od-btn-dark{background:${OD.black};color:${OD.white};}
+        .od-btn-dark:hover{background:${OD.graphite};}
+        .od-btn-ghost{background:transparent;color:${OD.black};border:1px solid ${OD.border};}
+        .od-btn-ghost:hover{background:${OD.paper};border-color:${OD.borderD};}
+        .od-input{padding:10px 12px;border:1px solid ${OD.border};border-radius:6px;font-size:14px;outline:none;background:${OD.white};color:${OD.black};font-family:inherit;}
+        .od-input:focus{border-color:${OD.black};}
+        @keyframes odFadeUp{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+        @keyframes odPop{0%{transform:scale(.92);opacity:0}100%{transform:scale(1);opacity:1}}
+      `}</style>
+
+      <div style={{background:OD.white,borderBottom:`2px solid ${OD.black}`,padding:"18px 20px"}}>
+        <div style={{maxWidth:880,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+          <Brand size={46}/>
+          <div style={{display:"flex",alignItems:"center",gap:10,fontSize:12,color:OD.muted}}>
+            <span><b style={{color:OD.black,fontWeight:800}}>{state.members.length}</b> dads</span>
+            <span style={{width:4,height:4,borderRadius:99,background:OD.borderD}}/>
+            <span><b style={{color:OD.black,fontWeight:800}}>{state.dinners.filter(d=>d.status==="past").length}</b> dinners</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{background:OD.white,borderBottom:`1px solid ${OD.border}`}}>
+        <div style={{maxWidth:880,margin:"0 auto",padding:"0 20px",display:"flex"}}>
+          {[
+            {k:"dinner", label:"Dinner"},
+            {k:"roster", label:"Roster"},
+            {k:"history", label:"History"},
+          ].map(t => (
+            <button key={t.k} onClick={()=>setTab(t.k)}
+              style={{padding:"14px 22px",background:"transparent",border:"none",borderBottom:`3px solid ${tab===t.k?OD.red:"transparent"}`,color:tab===t.k?OD.black:OD.muted,fontWeight:700,fontSize:12,cursor:"pointer",letterSpacing:".08em",textTransform:"uppercase",fontFamily:"inherit"}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{maxWidth:880,margin:"0 auto",padding:"24px 20px"}}>
+        {tab === "dinner" && <DinnerView state={state} update={update} activeDinner={activeDinner} showToast={showToast}/>}
+        {tab === "roster" && <RosterView state={state} update={update} showToast={showToast}/>}
+        {tab === "history" && <HistoryView state={state}/>}
+      </div>
+
+      {toast && (
+        <div style={{position:"fixed",bottom:24,left:"50%",background:OD.black,color:OD.white,padding:"12px 20px",borderRadius:8,fontSize:13,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,.25)",zIndex:1000,animation:"odFadeUp .2s ease"}}>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ROSTER ───────────────────────────────────────────────────────────────────
+function RosterView({ state, update, showToast }) {
+  const [name, setName] = useState("");
+
+  const addMember = () => {
+    const n = name.trim();
+    if (!n) return;
+    if (state.members.some(m => m.name.toLowerCase() === n.toLowerCase())) {
+      showToast("Already on the roster");
+      return;
+    }
+    update(s => ({ members: [...s.members, { id: uid(), name: n, score: 0, picks: 0, lastPickedAt: null }] }));
+    setName("");
+  };
+
+  const removeMember = id => {
+    if (!confirm("Remove this dad from the roster?")) return;
+    update(s => ({ members: s.members.filter(m => m.id !== id) }));
+  };
+
+  const renameMember = (id, newName) => {
+    const n = newName.trim();
+    if (!n) return;
+    update(s => ({ members: s.members.map(m => m.id === id ? { ...m, name: n } : m) }));
+  };
+
+  const adjustScore = (id, delta) => {
+    update(s => ({ members: s.members.map(m => m.id === id ? { ...m, score: +(m.score + delta).toFixed(2) } : m) }));
+  };
+
+  const resetAll = () => {
+    if (!confirm("Reset ALL data — roster, dinners, scores? This can't be undone.")) return;
+    localStorage.removeItem(STORE_KEY);
+    update(() => defaultState());
+    showToast("All data cleared");
+  };
+
+  const sorted = [...state.members].sort((a, b) => a.score - b.score || a.name.localeCompare(b.name));
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+      <div className="od-card">
+        <div style={{fontSize:11,fontWeight:800,color:OD.black,marginBottom:10,letterSpacing:".08em",textTransform:"uppercase"}}>Add a dad</div>
+        <div style={{display:"flex",gap:8}}>
+          <input className="od-input" value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addMember()} placeholder="Full name" style={{flex:1}}/>
+          <button className="od-btn od-btn-primary" onClick={addMember}>Add</button>
+        </div>
+      </div>
+
+      <div className="od-card" style={{padding:0,overflow:"hidden"}}>
+        <div style={{padding:"14px 18px",borderBottom:`1px solid ${OD.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+          <div style={{fontSize:11,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase"}}>Roster (sorted by score)</div>
+          <div style={{fontSize:11,color:OD.muted}}>Lower score = more likely to be picked next</div>
+        </div>
+        {sorted.length === 0 ? (
+          <div style={{padding:"40px 20px",textAlign:"center",color:OD.muted,fontSize:14}}>
+            No dads yet. Add some above.
+          </div>
+        ) : (
+          sorted.map(m => (
+            <MemberRow key={m.id} m={m} onRemove={()=>removeMember(m.id)} onRename={n=>renameMember(m.id,n)} onAdjust={d=>adjustScore(m.id,d)}/>
+          ))
+        )}
+      </div>
+
+      <div style={{textAlign:"center",paddingTop:8}}>
+        <button onClick={resetAll} style={{background:"transparent",border:"none",color:OD.mutedL,fontSize:11,cursor:"pointer",textDecoration:"underline"}}>Reset all data</button>
+      </div>
+    </div>
+  );
+}
+
+function MemberRow({ m, onRemove, onRename, onAdjust }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(m.name);
+  const save = () => { onRename(name); setEditing(false); };
+  return (
+    <div style={{padding:"14px 18px",borderBottom:`1px solid ${OD.border}`,display:"flex",alignItems:"center",gap:14}}>
+      <div style={{width:38,height:38,borderRadius:99,background:OD.black,color:OD.white,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
+        {initials(m.name)}
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        {editing ? (
+          <input className="od-input" value={name} onChange={e=>setName(e.target.value)} onBlur={save} onKeyDown={e=>e.key==="Enter"&&save()} autoFocus style={{fontSize:14,padding:"4px 8px",width:"100%",maxWidth:280}}/>
+        ) : (
+          <div onClick={()=>setEditing(true)} style={{fontSize:14,fontWeight:600,color:OD.black,cursor:"pointer",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+        )}
+        <div style={{fontSize:11,color:OD.muted,marginTop:2}}>
+          {m.picks} dinner{m.picks===1?"":"s"} attended{m.lastPickedAt?` • last ${fmtDate(m.lastPickedAt)}`:""}
+        </div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:4}}>
+        <button onClick={()=>onAdjust(-0.5)} title="Decrease score" style={{width:26,height:26,borderRadius:4,border:`1px solid ${OD.border}`,background:OD.white,cursor:"pointer",fontWeight:700,fontSize:14,color:OD.black}}>−</button>
+        <span style={{minWidth:48,textAlign:"center",fontSize:13,fontWeight:800,color:m.score>0?OD.red:m.score<0?OD.green:OD.muted}}>{fmtScore(m.score)}</span>
+        <button onClick={()=>onAdjust(0.5)} title="Increase score" style={{width:26,height:26,borderRadius:4,border:`1px solid ${OD.border}`,background:OD.white,cursor:"pointer",fontWeight:700,fontSize:14,color:OD.black}}>+</button>
+      </div>
+      <button onClick={onRemove} style={{background:"transparent",border:"none",color:OD.mutedL,cursor:"pointer",fontSize:11,padding:6}}>Remove</button>
+    </div>
+  );
+}
+
+// ── DINNER ───────────────────────────────────────────────────────────────────
+function DinnerView({ state, update, activeDinner, showToast }) {
+  if (!activeDinner) return <NewDinnerCard state={state} update={update}/>;
+  return <ActiveDinner state={state} update={update} dinner={activeDinner} showToast={showToast}/>;
+}
+
+function NewDinnerCard({ state, update }) {
+  const [label, setLabel] = useState("");
+  const [date, setDate] = useState("");
+  const [size, setSize] = useState(state.defaultSize);
+  const maxSize = Math.max(2, state.members.length || 2);
+
+  const create = () => {
+    if (state.members.length === 0) {
+      alert("Add dads to the roster first.");
+      return;
+    }
+    const dinnerId = uid();
+    const votes = {};
+    state.members.forEach(m => votes[m.id] = "?");
+    const dinner = {
+      id: dinnerId,
+      label: label.trim() || `Dinner ${state.dinners.length + 1}`,
+      date: date ? new Date(date + "T19:00").getTime() : Date.now(),
+      size: Math.max(1, Math.min(size, state.members.length)),
+      status: "voting",
+      votes,
+      selected: [],
+      createdAt: Date.now(),
+    };
+    update(s => ({ dinners: [...s.dinners, dinner], activeDinnerId: dinnerId, defaultSize: dinner.size }));
+  };
+
+  return (
+    <div className="od-card" style={{padding:28,textAlign:"center"}}>
+      <div style={{margin:"0 auto 14px",width:64,height:64}}><OwlLogo size={64}/></div>
+      <div style={{fontSize:20,fontWeight:900,color:OD.black,marginBottom:6}}>No dinner in progress</div>
+      <div style={{fontSize:13,color:OD.muted,marginBottom:24}}>Start a new dinner to collect votes and pick the crew.</div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,maxWidth:480,margin:"0 auto 12px",textAlign:"left"}}>
+        <div>
+          <label style={{fontSize:10,fontWeight:800,color:OD.muted,letterSpacing:".08em",textTransform:"uppercase",display:"block",marginBottom:5}}>Label (optional)</label>
+          <input className="od-input" value={label} onChange={e=>setLabel(e.target.value)} placeholder="e.g. May Dinner" style={{width:"100%"}}/>
+        </div>
+        <div>
+          <label style={{fontSize:10,fontWeight:800,color:OD.muted,letterSpacing:".08em",textTransform:"uppercase",display:"block",marginBottom:5}}>Date</label>
+          <input className="od-input" type="date" value={date} onChange={e=>setDate(e.target.value)} style={{width:"100%"}}/>
+        </div>
+      </div>
+      <div style={{maxWidth:480,margin:"0 auto 22px",textAlign:"left"}}>
+        <label style={{fontSize:10,fontWeight:800,color:OD.muted,letterSpacing:".08em",textTransform:"uppercase",display:"block",marginBottom:5}}>Group size</label>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <input type="range" min="2" max={maxSize} value={Math.min(size,maxSize)} onChange={e=>setSize(+e.target.value)} style={{flex:1,accentColor:OD.red}}/>
+          <span style={{fontSize:20,fontWeight:900,color:OD.black,minWidth:32,textAlign:"right"}}>{size}</span>
+        </div>
+      </div>
+
+      <button className="od-btn od-btn-primary" onClick={create} style={{padding:"12px 32px",fontSize:14,fontWeight:700,letterSpacing:".04em"}}>Start Dinner</button>
+    </div>
+  );
+}
+
+function ActiveDinner({ state, update, dinner, showToast }) {
+  const members = state.members;
+  const yesCount = members.filter(m => dinner.votes[m.id] === "yes").length;
+  const noCount = members.filter(m => dinner.votes[m.id] === "no").length;
+  const pendCount = members.length - yesCount - noCount;
+
+  const setVote = (id, v) => {
+    update(s => ({
+      dinners: s.dinners.map(d => d.id === dinner.id ? { ...d, votes: { ...d.votes, [id]: v } } : d)
+    }));
+  };
+
+  const runSelection = () => {
+    const yesMembers = members.filter(m => dinner.votes[m.id] === "yes");
+    let pool = yesMembers;
+    if (yesMembers.length < dinner.size) {
+      const padN = dinner.size - yesMembers.length;
+      const ok = confirm(`Only ${yesMembers.length} said yes. Fill the remaining ${padN} from the lowest-score dads who didn't say yes?`);
+      if (!ok) return;
+      const nonYes = members.filter(m => dinner.votes[m.id] !== "yes").sort((a,b)=>a.score-b.score).slice(0, padN);
+      pool = [...yesMembers, ...nonYes];
+    }
+    const picks = pool.length <= dinner.size ? pool : weightedSample(pool, dinner.size);
+    update(s => ({
+      dinners: s.dinners.map(d => d.id === dinner.id ? { ...d, status: "selected", selected: picks.map(p=>p.id) } : d)
+    }));
+  };
+
+  const reroll = () => {
+    runSelection();
+    showToast("Re-rolled selection");
+  };
+
+  const finalize = () => {
+    const selSet = new Set(dinner.selected);
+    const yesSet = new Set(members.filter(m => dinner.votes[m.id] === "yes").map(m=>m.id));
+    update(s => ({
+      members: s.members.map(m => {
+        if (selSet.has(m.id)) return { ...m, score: +(m.score + 1).toFixed(2), picks: m.picks + 1, lastPickedAt: dinner.date };
+        if (yesSet.has(m.id)) return { ...m, score: +(m.score - 0.25).toFixed(2) };
+        return m;
+      }),
+      dinners: s.dinners.map(d => d.id === dinner.id ? { ...d, status: "past", finalizedAt: Date.now() } : d),
+      activeDinnerId: null,
+    }));
+    showToast("Dinner locked in. Scores updated.");
+  };
+
+  const cancel = () => {
+    if (!confirm("Cancel this dinner? Votes will be discarded and scores won't change.")) return;
+    update(s => ({
+      dinners: s.dinners.filter(d => d.id !== dinner.id),
+      activeDinnerId: null,
+    }));
+  };
+
+  const copyPoll = () => {
+    const lines = [
+      `🦉 ${dinner.label}${dinner.date ? ` — ${fmtDate(dinner.date)}` : ""}`,
+      `Reply Y if you can make it, N if you can't.`,
+      `We'll pick ${dinner.size} from the Yes votes.`,
+    ];
+    navigator.clipboard?.writeText(lines.join("\n"));
+    showToast("Poll text copied — paste into iMessage");
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div className="od-card" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:18,fontWeight:900,color:OD.black}}>{dinner.label}</div>
+          <div style={{fontSize:12,color:OD.muted,marginTop:2}}>{fmtDate(dinner.date)} • Picking {dinner.size}</div>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {dinner.status === "voting" && <>
+            <button className="od-btn od-btn-ghost" onClick={copyPoll}>Copy poll text</button>
+            <button className="od-btn od-btn-ghost" onClick={cancel}>Cancel dinner</button>
+          </>}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+        <SummaryStat label="Yes" count={yesCount} color={OD.green}/>
+        <SummaryStat label="No" count={noCount} color={OD.muted}/>
+        <SummaryStat label="Pending" count={pendCount} color={OD.amber}/>
+      </div>
+
+      {dinner.status === "voting" ? (
+        <>
+          <div className="od-card" style={{padding:0,overflow:"hidden"}}>
+            <div style={{padding:"14px 18px",borderBottom:`1px solid ${OD.border}`,fontSize:11,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase"}}>Mark each dad's response</div>
+            {members.length === 0 ? (
+              <div style={{padding:"30px",textAlign:"center",color:OD.muted,fontSize:14}}>Add some dads to the roster first.</div>
+            ) : members.map(m => (
+              <VoteRow key={m.id} m={m} vote={dinner.votes[m.id]||"?"} onVote={v=>setVote(m.id,v)}/>
+            ))}
+          </div>
+          <button className="od-btn od-btn-primary" onClick={runSelection} disabled={members.length===0||yesCount===0} style={{padding:"14px 20px",fontSize:14,fontWeight:800,letterSpacing:".04em"}}>
+            Run Selection
+          </button>
+        </>
+      ) : (
+        <SelectionResult dinner={dinner} members={members} onReroll={reroll} onFinalize={finalize}/>
+      )}
+    </div>
+  );
+}
+
+function SummaryStat({label, count, color}) {
+  return (
+    <div className="od-card" style={{padding:"14px 16px",textAlign:"center"}}>
+      <div style={{fontSize:28,fontWeight:900,color,lineHeight:1}}>{count}</div>
+      <div style={{fontSize:10,fontWeight:800,color:OD.muted,marginTop:6,letterSpacing:".08em",textTransform:"uppercase"}}>{label}</div>
+    </div>
+  );
+}
+
+function VoteRow({m, vote, onVote}) {
+  const opts = [
+    {v:"yes",label:"Yes",bg:OD.green},
+    {v:"no",label:"No",bg:OD.graphite},
+    {v:"?",label:"?",bg:OD.amber},
+  ];
+  return (
+    <div style={{padding:"12px 18px",borderBottom:`1px solid ${OD.border}`,display:"flex",alignItems:"center",gap:14}}>
+      <div style={{width:32,height:32,borderRadius:99,background:OD.black,color:OD.white,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,flexShrink:0}}>{initials(m.name)}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:600,color:OD.black,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{m.name}</div>
+        <div style={{fontSize:11,color:OD.muted}}>score {fmtScore(m.score)}</div>
+      </div>
+      <div style={{display:"flex",gap:4}}>
+        {opts.map(o => (
+          <button key={o.v} onClick={()=>onVote(o.v)}
+            style={{padding:"6px 12px",border:`1px solid ${vote===o.v?o.bg:OD.border}`,background:vote===o.v?o.bg:OD.white,color:vote===o.v?OD.white:OD.muted,borderRadius:6,fontWeight:700,fontSize:12,cursor:"pointer",minWidth:42,fontFamily:"inherit"}}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SelectionResult({dinner, members, onReroll, onFinalize}) {
+  const picks = dinner.selected.map(id => members.find(m=>m.id===id)).filter(Boolean);
+  const copy = () => {
+    const text = `${dinner.label} crew (${picks.length}):\n${picks.map(p=>`• ${p.name}`).join("\n")}`;
+    navigator.clipboard?.writeText(text);
+  };
+  return (
+    <>
+      <div className="od-card" style={{background:OD.black,color:OD.white,border:`2px solid ${OD.red}`,padding:24,textAlign:"center",animation:"odPop .25s ease"}}>
+        <div style={{fontSize:11,fontWeight:800,letterSpacing:".22em",textTransform:"uppercase",color:OD.red,marginBottom:8}}>The Crew</div>
+        <div style={{fontSize:22,fontWeight:900,marginBottom:18}}>{picks.length} dads selected</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
+          {picks.map(p => (
+            <div key={p.id} style={{background:OD.white,color:OD.black,padding:"8px 14px 8px 8px",borderRadius:99,display:"flex",alignItems:"center",gap:8,fontWeight:700,fontSize:13}}>
+              <div style={{width:26,height:26,borderRadius:99,background:OD.red,color:OD.white,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800}}>{initials(p.name)}</div>
+              {p.name}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        <button className="od-btn od-btn-ghost" onClick={onReroll} style={{flex:"1 1 120px",padding:"12px"}}>Re-roll</button>
+        <button className="od-btn od-btn-dark" onClick={copy} style={{flex:"1 1 120px",padding:"12px"}}>Copy list</button>
+        <button className="od-btn od-btn-primary" onClick={onFinalize} style={{flex:"2 1 200px",padding:"12px",fontWeight:800}}>Lock In & Update Scores</button>
+      </div>
+    </>
+  );
+}
+
+// ── HISTORY ──────────────────────────────────────────────────────────────────
+function HistoryView({state}) {
+  const past = state.dinners.filter(d => d.status === "past").sort((a,b)=>b.date-a.date);
+  if (past.length === 0) {
+    return (
+      <div className="od-card" style={{textAlign:"center",padding:40,color:OD.muted}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:6,color:OD.black}}>No past dinners yet</div>
+        <div style={{fontSize:12}}>Finalized dinners will appear here.</div>
+      </div>
+    );
+  }
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {past.map(d => {
+        const picks = d.selected.map(id => state.members.find(m=>m.id===id)).filter(Boolean);
+        return (
+          <div key={d.id} className="od-card">
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:15,fontWeight:900,color:OD.black}}>{d.label}</div>
+                <div style={{fontSize:12,color:OD.muted}}>{fmtDate(d.date)}</div>
+              </div>
+              <div style={{fontSize:11,fontWeight:800,color:OD.red,letterSpacing:".12em",textTransform:"uppercase"}}>{picks.length} attended</div>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {picks.map(p => (
+                <div key={p.id} style={{background:OD.paper,padding:"5px 12px",borderRadius:99,fontSize:12,fontWeight:700,color:OD.black,border:`1px solid ${OD.border}`}}>{p.name}</div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}

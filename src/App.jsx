@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import OakwoodDads, { OwlLogo } from "./OakwoodDads";
 
 // ── PALETTE ──────────────────────────────────────────────────────────────────
 const C = {
@@ -430,6 +431,10 @@ function Header({cart,nav,setSearch,setCat,user,setShowLogin,setUser}){
           </button>
         </form>
         <div style={{display:"flex",gap:6,marginLeft:"auto",flexShrink:0,alignItems:"center"}}>
+          <button onClick={()=>nav("dads")} title="2038 Oakwood Dads" style={{display:"flex",flexDirection:"column",alignItems:"center",gap:1,background:"transparent",border:"none",color:C.white,cursor:"pointer",padding:"4px 8px",borderRadius:4,fontSize:10}}>
+            <OwlLogo size={20}/>
+            <span style={{fontWeight:600,letterSpacing:".06em"}}>Dads</span>
+          </button>
           {user?(
             <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:0}}>
               <span style={{fontSize:10,color:"rgba(255,255,255,.7)"}}>Hello, {user.name.split(" ")[0]}</span>
@@ -1186,6 +1191,7 @@ export default function LooMeStore(){
       {page==="cart"&&<Cart cart={cart} setCart={setCart} nav={nav} user={user} setShowLogin={setShowLogin} setBuyNowProduct={setBuyNowProduct}/>}
       {page==="checkout"&&<Checkout cart={cart} nav={nav} setCart={setCart} user={user} setUser={setUser}/>}
       {page==="account"&&<Account nav={nav} user={user} setUser={setUser} setShowLogin={setShowLogin}/>}
+      {page==="dads"&&<OakwoodDads/>}
 
       <Footer nav={nav}/>
       <Toast msg={toast}/>
