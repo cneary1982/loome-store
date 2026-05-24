@@ -130,10 +130,16 @@ TARGETS = [
     # (symbol, timeframe-label, source-file, resample-rule-or-None)
     ("ES", "15m", "ES_15m.csv", None),
     ("ES", "1h",  "ES_60m.csv", None),
+    ("ES", "4h",  "ES_60m.csv", "4h"),
+    ("ES", "1d",  "ES_60m.csv", "1D"),
     ("NQ", "15m", "NQ_15m.csv", None),
     ("NQ", "1h",  "NQ_60m.csv", None),
+    ("NQ", "4h",  "NQ_60m.csv", "4h"),
+    ("NQ", "1d",  "NQ_60m.csv", "1D"),
     ("GC", "15m", "GC_15m.csv", None),
     ("GC", "1h",  "GC_60m.csv", None),
+    ("GC", "4h",  "GC_60m.csv", "4h"),
+    ("GC", "1d",  "GC_60m.csv", "1D"),
 ]
 
 
@@ -163,6 +169,8 @@ SINGLE_PARAMS = {
     # mirrors app.py TF_CONFIG
     "15m": {"lookback": 48, "threshold": 0.015},
     "1h":  {"lookback": 48, "threshold": 0.020},
+    "4h":  {"lookback": 42, "threshold": 0.025},
+    "1d":  {"lookback": 20, "threshold": 0.020},
 }
 
 
