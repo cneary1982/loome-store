@@ -128,18 +128,18 @@ def backtest(df: pd.DataFrame, lookback: int, threshold: float, atr_mult: float)
 # ─── Dataset assembly ───────────────────────────────────────────────────────
 TARGETS = [
     # (symbol, timeframe-label, source-file, resample-rule-or-None)
-    ("ES", "15m", "ES_15m.csv", None),
-    ("ES", "1h",  "ES_60m.csv", None),
-    ("ES", "4h",  "ES_60m.csv", "4h"),
-    ("ES", "1d",  "ES_60m.csv", "1D"),
-    ("NQ", "15m", "NQ_15m.csv", None),
-    ("NQ", "1h",  "NQ_60m.csv", None),
-    ("NQ", "4h",  "NQ_60m.csv", "4h"),
-    ("NQ", "1d",  "NQ_60m.csv", "1D"),
-    ("GC", "15m", "GC_15m.csv", None),
-    ("GC", "1h",  "GC_60m.csv", None),
-    ("GC", "4h",  "GC_60m.csv", "4h"),
-    ("GC", "1d",  "GC_60m.csv", "1D"),
+    ("ES", "15m", "ES_15m.csv",  None),
+    ("ES", "1h",  "ES_60m.csv",  None),
+    ("ES", "4h",  "ES_240m.csv", None),
+    ("ES", "1d",  "ES_1d.csv",   None),
+    ("NQ", "15m", "NQ_15m.csv",  None),
+    ("NQ", "1h",  "NQ_60m.csv",  None),
+    ("NQ", "4h",  "NQ_240m.csv", None),
+    ("NQ", "1d",  "NQ_1d.csv",   None),
+    ("GC", "15m", "GC_15m.csv",  None),
+    ("GC", "1h",  "GC_60m.csv",  None),
+    ("GC", "4h",  "GC_240m.csv", None),
+    ("GC", "1d",  "GC_1d.csv",   None),
 ]
 
 
