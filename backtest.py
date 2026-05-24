@@ -200,18 +200,24 @@ SINGLE_PARAMS = {
 }
 
 
+# Per-symbol session policy. ES/NQ RTH filter underperformed unfiltered breakouts
+# in testing (15m wr 61→52, 64→42), so it's off. GC killzones doubled 1h expectancy.
+SESSION_POLICY = {"ES": False, "NQ": False, "GC": True}
+
+
 def _make_filters(sym: str, tf: str, bias_map: dict, use_align: bool, use_session: bool):
     """Build (entry_ok, force_flat_at) callables for a given (sym, tf)."""
+    session_on = use_session and SESSION_POLICY.get(sym, False)
     entry_ok = None
     force_flat_at = None
-    if use_align or use_session:
+    if use_align or session_on:
         def entry_ok(ts, side, sym=sym, tf=tf):
-            if use_session and not F.session_entry_ok(sym, tf, ts):
+            if session_on and not F.session_entry_ok(sym, tf, ts):
                 return False
             if use_align and not F.aligned(sym, tf, side, ts, bias_map):
                 return False
             return True
-    if use_session:
+    if session_on:
         def force_flat_at(ts, sym=sym, tf=tf):
             return F.session_force_flat(sym, tf, ts)
     return entry_ok, force_flat_at
@@ -254,9 +260,9 @@ def main():
                     help="ATR multiplier for TP/SL (default 3.0)")
     ap.add_argument("--min-trades", type=int, default=5,
                     help="Filter out param combos with fewer trades than this (sweep only)")
-    ap.add_argument("--align",   action="store_true", help="Require HTF EMA20 trend alignment")
-    ap.add_argument("--session", action="store_true", help="ES/NQ RTH window + GC killzones")
-    ap.add_argument("--compare", action="store_true",
+    ap.add_argument("--no-align",   action="store_true", help="Disable HTF EMA20 trend alignment (default: on)")
+    ap.add_argument("--no-session", action="store_true", help="Disable GC killzone filter (default: on for GC)")
+    ap.add_argument("--compare",    action="store_true",
                     help="Run base / +session / +align / +both side by side (single mode)")
     args = ap.parse_args()
 
@@ -269,10 +275,13 @@ def main():
 
     print(f"\nATR_MULT = {args.atr_mult}")
 
+    use_align   = not args.no_align
+    use_session = not args.no_session
+
     if args.sweep:
-        res = run_sweep(data, args.atr_mult, use_align=args.align, use_session=args.session)
+        res = run_sweep(data, args.atr_mult, use_align=use_align, use_session=use_session)
         res = res[res["trades"] >= args.min_trades].copy()
-        print(f"\n=== Parameter sweep  (align={args.align}, session={args.session}) ===")
+        print(f"\n=== Parameter sweep  (align={use_align}, session={use_session}, GC-only) ===")
         print(res.sort_values(["symbol", "tf", "expectancy"],
                               ascending=[True, True, False]).to_string(index=False))
         print("\n=== Top 10 by expectancy across all (symbol, tf) ===")
@@ -294,8 +303,8 @@ def main():
         print("\n=== Compare: base vs +session vs +align vs +both ===")
         print(merged.to_string(index=False))
     else:
-        res = run_single(data, args.atr_mult, use_align=args.align, use_session=args.session)
-        print(f"\n=== Backtest  (align={args.align}, session={args.session}) ===")
+        res = run_single(data, args.atr_mult, use_align=use_align, use_session=use_session)
+        print(f"\n=== Backtest  (align={use_align}, session={use_session}, GC-only) ===")
         print(res.to_string(index=False))
 
 
