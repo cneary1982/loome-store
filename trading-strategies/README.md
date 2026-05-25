@@ -44,7 +44,7 @@ trading-strategies/
 ├── RISK.md                            live-trading risks + pre-flight checklist
 ├── CONTRIBUTING.md                    how to add features and submit PRs
 ├── LICENSE                            MIT
-├── requirements.txt                   pandas, numpy, requests
+├── requirements.txt                   pandas, numpy, requests, streamlit
 ├── .github/workflows/sweep.yml        CI: runs the full sweep on every push/PR
 │
 │ Backtest path (futures: ES / NQ / GC)
@@ -56,7 +56,13 @@ trading-strategies/
 │
 │ Live-trading path (Tradier; ETF proxies SPY / QQQ / GLD)
 ├── tradier.py                         REST client (sandbox + live)
-├── live_trader.py                     runner: polls, signals, sizes, places orders
+├── live_trader.py                     single-strategy runner (simple path)
+│
+│ Multi-strategy orchestrator (recommended live path)
+├── orchestrator.py                    daemon: runs all strategies in strategies.py
+├── strategies.py                      registry — edit to add/remove strategies
+├── position_manager.py                central state + per-symbol lock + circuit breaker
+├── dashboard.py                       Streamlit UI (reads state, writes commands)
 │
 │ Data and results
 ├── data/                              price bars (UTC, tz-aware)
@@ -69,6 +75,69 @@ trading-strategies/
     ├── sweep_all.csv
     └── best_per_cell_by_total_R.csv
 ```
+
+## Multi-strategy orchestrator (recommended)
+
+For running **multiple strategies simultaneously** with one trade per security at a time, use the orchestrator. It's the unified live system: one Tradier connection, multiple strategy types, central state, kill switch, Streamlit dashboard.
+
+```bash
+# Terminal 1: the orchestrator daemon
+export TRADIER_TOKEN='...'
+export TRADIER_ACCOUNT_ID='...'
+# TRADIER_ENV defaults to 'sandbox'
+python orchestrator.py --risk-per-trade 25 --max-daily-loss -100
+
+# Terminal 2: the dashboard
+streamlit run dashboard.py
+```
+
+The dashboard opens at `http://localhost:8501`. It auto-refreshes every 5 seconds and shows:
+
+- **Broker mode** (sandbox / LIVE), cash available, daily PnL, halt status
+- **Kill switch** button (halts all strategies immediately)
+- **Strategies table** with per-strategy enable/disable toggles, trades today, PnL today
+- **Open positions** (per-symbol lock — at most one row per symbol)
+- **Recent trades** (last 50)
+
+### Adding a strategy
+
+Edit `strategies.py`:
+
+```python
+from orchestrator import RegimeBreakout
+
+STRATEGIES = [
+    RegimeBreakout(name="SPY_15m_breakout", symbol="SPY", timeframe="15m",
+                   lookback=48, threshold=0.015, atr_mult=2.5),
+    RegimeBreakout(name="QQQ_5m_aggressive", symbol="QQQ", timeframe="5m",
+                   lookback=32, threshold=0.010, atr_mult=2.0),
+    # add more here
+]
+```
+
+Restart the orchestrator after editing.
+
+### Per-symbol lock
+
+`PositionManager.try_open(symbol, strategy_name)` atomically claims the symbol. If two strategies fire on SPY in the same poll cycle, the first one wins; the second sees the symbol is taken, cancels its order, and logs a `LOST_RACE` event. This guarantees **at most one open position per security across all strategies**.
+
+### Writing a new strategy type
+
+Subclass `Strategy` in `orchestrator.py` (or in your own file imported by `strategies.py`):
+
+```python
+from orchestrator import Strategy, StrategySignal
+
+class MyStrategy(Strategy):
+    def signal(self, bars, now_utc):
+        # bars is a DataFrame with Open/High/Low/Close/Volume, UTC tz-aware index
+        # Return StrategySignal(...) or None
+        ...
+```
+
+See `RegimeBreakout` in `orchestrator.py` as a reference.
+
+
 
 ## Glossary (the short version)
 

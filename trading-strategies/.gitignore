@@ -11,3 +11,7 @@ data/_raw_*.csv
 
 # Live trader runtime state (never commit; contains open positions)
 live_state.json
+state.json
+commands.json
+commands.json.tmp
+state.json.tmp
