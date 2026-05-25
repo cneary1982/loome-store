@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.DS_Store
+.ipynb_checkpoints/
+
+# Raw vendor exports (regenerate from Databento)
+data/_raw_*.csv
