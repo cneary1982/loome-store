@@ -32,8 +32,13 @@ class GenericTrade:
 
 
 def backtest_strategy(strategy: Strategy, df: pd.DataFrame,
-                      warmup: int = 250) -> dict:
-    """Walk closed bars; on each, call strategy.signal(); simulate exits."""
+                      warmup: int = 250, window: int = 500) -> dict:
+    """Walk closed bars; on each, call strategy.signal(); simulate exits.
+
+    `window`: only the last `window` bars are passed to signal(). This matches
+    how live trading works (broker fetches a bounded window) and keeps the
+    backtester O(n) instead of O(n²) when strategies re-derive state each call.
+    """
     if len(df) <= warmup + 2:
         return _empty()
     h = df["High"].values.astype(float)
@@ -42,7 +47,8 @@ def backtest_strategy(strategy: Strategy, df: pd.DataFrame,
     trades: list[GenericTrade] = []
     i = warmup
     while i < len(df) - 1:
-        view = df.iloc[: i + 1]
+        start = max(0, i + 1 - window)
+        view = df.iloc[start: i + 1]
         sig  = strategy.signal(view, view.index[-1])
         if sig is None:
             i += 1
