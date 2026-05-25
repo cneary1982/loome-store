@@ -74,6 +74,87 @@ SESSION_VARIANTS: dict = {
 }
 
 
+# ─── Human-readable labels (for printouts + CSV column) ─────────────────────
+SESSION_LABELS: dict = {
+    "off":             "No session filter (24h)",
+    "rth":             "ES/NQ RTH 09:30-15:30 ET (flat at 16:00)",
+    "kz3":             "GC 3 killzones: London 02-05 + NY AM 08-11 + Asia 20-23 ET",
+    "kz_ny_only":      "GC NY AM only: 08:00-11:00 ET",
+    "kz_ny_london":    "GC London + NY AM: 02-05 + 08-11 ET (no Asia)",
+    "kz_ny_wide":      "GC NY AM widened: 07:00-12:00 ET",
+    "kz_narrow":       "GC narrow: 08:20-10:30 ET (COMEX open + AM Fix)",
+    "kz_active_block": "GC continuous active block: 02:00-16:00 ET",
+}
+
+ALIGN_LABELS: dict = {
+    0: "No HTF filter",
+    1: "Require HTF EMA20 + slope alignment (1h gated by 4h+1d; 15m by 1h+4h; 4h by 1d)",
+}
+
+# Column descriptions for the CSV / GitHub readers
+COLUMN_GLOSSARY = [
+    ("symbol",        "Futures contract symbol (ES, NQ, GC)"),
+    ("tf",            "Bar timeframe (15m, 1h, 4h, 1d)"),
+    ("lookback",      "Number of bars used for the log-return regime label"),
+    ("threshold",     "Log-return magnitude defining up/down regime (0.015 = 1.5%)"),
+    ("atr",           "ATR(14) multiplier for take-profit and stop-loss distance (symmetric)"),
+    ("align",         "HTF EMA20 trend-alignment filter: 0=off, 1=on"),
+    ("align_label",   "Human-readable description of the alignment filter"),
+    ("session",       "Session-window filter code (see SESSION_LABELS)"),
+    ("session_label", "Human-readable description of the session filter"),
+    ("trades",        "Number of completed round-trip trades"),
+    ("win_rate",      "Percent of trades exited at TP (or positive partial exit)"),
+    ("expectancy",    "Mean R-multiple per trade (R = atr_mult * ATR risked)"),
+    ("total_R",       "Sum of R-multiples across all trades (= expectancy * trades)"),
+]
+
+
+def _write_readme(path: Path) -> None:
+    """Write a markdown sidecar so the CSV is self-documenting on GitHub."""
+    lines = ["# sweep_all.csv — column glossary", "",
+             "Output of `python sweep_all.py`. Each row is one backtest configuration.", ""]
+    lines += ["## Columns", "", "| Column | Description |", "|---|---|"]
+    for name, desc in COLUMN_GLOSSARY:
+        lines.append(f"| `{name}` | {desc} |")
+    lines += ["", "## `align` values", "", "| Value | Meaning |", "|---|---|"]
+    for k, v in ALIGN_LABELS.items():
+        lines.append(f"| `{k}` | {v} |")
+    lines += ["", "## `session` codes", "", "| Code | Window(s) |", "|---|---|"]
+    for code, desc in SESSION_LABELS.items():
+        lines.append(f"| `{code}` | {desc} |")
+    lines += ["",
+              "## Metric definitions",
+              "",
+              "- **R-multiple**: a trade's PnL expressed in units of risk, where 1 R = "
+              "`atr_mult * ATR(14)`. A trade that hits its take-profit at "
+              "`entry + atr_mult*ATR` is +1 R; the stop-loss is -1 R. Forced exits "
+              "(e.g. 16:00 ET flat for ES/NQ RTH) yield fractional R based on the "
+              "exit price.",
+              "- **expectancy** = mean R per trade.",
+              "- **total_R** = expectancy × trades. Use this when comparing configs "
+              "with very different trade counts — a high per-trade expectancy with "
+              "only 10 trades is less valuable than a moderate expectancy compounded "
+              "over 200 trades.",
+              ""]
+    path.write_text("\n".join(lines))
+
+
+def print_glossary():
+    print("\n" + "=" * 78)
+    print("BACKTEST RESULT GLOSSARY")
+    print("=" * 78)
+    print("\nColumns:")
+    for name, desc in COLUMN_GLOSSARY:
+        print(f"  {name:<14} - {desc}")
+    print("\nAlignment filter values ('align' column):")
+    for k, v in ALIGN_LABELS.items():
+        print(f"  align={k}  - {v}")
+    print("\nSession filter codes ('session' column):")
+    for code, desc in SESSION_LABELS.items():
+        print(f"  {code:<16} - {desc}")
+    print("=" * 78 + "\n")
+
+
 # ─── Filter callable factory ────────────────────────────────────────────────
 def _in_windows(ts, windows) -> bool:
     """ts: tz-aware. windows: list of (start_min, end_min) NY-tz minute ranges."""
@@ -117,7 +198,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-trades", type=int, default=10)
     ap.add_argument("--rank", choices=["total_R", "expectancy"], default="total_R")
+    ap.add_argument("--no-glossary", action="store_true",
+                    help="Skip the glossary header")
     args = ap.parse_args()
+
+    if not args.no_glossary:
+        print_glossary()
 
     data = load_dataset(Path("data"))
     bias_map = F.build_bias_map(data)
@@ -138,8 +224,10 @@ def main():
             rows.append({
                 "symbol": sym, "tf": tf,
                 "lookback": lb, "threshold": th, "atr": am,
-                "align":   int(ua),
-                "session": sv,
+                "align":         int(ua),
+                "align_label":   ALIGN_LABELS[int(ua)],
+                "session":       sv,
+                "session_label": SESSION_LABELS[sv],
                 "trades":     r["trades"],
                 "win_rate":   r["win_rate"],
                 "expectancy": r["expectancy"],
@@ -150,9 +238,12 @@ def main():
           f"({len(rows)/elapsed:.0f} runs/s)")
 
     df_all = pd.DataFrame(rows)
-    out = Path("data") / "sweep_all.csv"
+    results = Path("results"); results.mkdir(exist_ok=True)
+    out = results / "sweep_all.csv"
     df_all.to_csv(out, index=False)
+    _write_readme(results / "README.md")
     print(f"Full grid written: {out}")
+    print(f"Glossary written:  {results / 'README.md'}")
 
     df = df_all[df_all["trades"] >= args.min_trades].copy()
     print(f"After min_trades={args.min_trades}: {len(df):,} rows")
@@ -160,6 +251,9 @@ def main():
     # Best per (sym, tf) by chosen rank metric
     idx = df.groupby(["symbol", "tf"])[args.rank].idxmax()
     best = df.loc[idx].sort_values(["symbol", "tf"])
+    best_out = results / f"best_per_cell_by_{args.rank}.csv"
+    best.to_csv(best_out, index=False)
+    print(f"Best-per-cell written: {best_out}")
     print(f"\n=== Best per (symbol, tf) by {args.rank} ===")
     print(best.to_string(index=False))
 

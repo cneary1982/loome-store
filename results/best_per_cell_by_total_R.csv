@@ -1,0 +1,13 @@
+symbol,tf,lookback,threshold,atr,align,align_label,session,session_label,trades,win_rate,expectancy,total_R
+ES,15m,32,0.01,2.5,0,No HTF filter,off,No session filter (24h),293,55.6,0.113,33.11
+ES,1d,20,0.03,2.0,0,No HTF filter,off,No session filter (24h),56,62.5,0.25,14.0
+ES,1h,48,0.01,2.5,0,No HTF filter,off,No session filter (24h),225,54.7,0.093,20.93
+ES,4h,20,0.01,2.0,0,No HTF filter,off,No session filter (24h),195,55.4,0.108,21.06
+GC,15m,48,0.015,2.5,0,No HTF filter,off,No session filter (24h),178,60.7,0.213,37.91
+GC,1d,32,0.015,3.0,0,No HTF filter,off,No session filter (24h),18,88.9,0.778,14.0
+GC,1h,20,0.02,2.0,0,No HTF filter,kz3,GC 3 killzones: London 02-05 + NY AM 08-11 + Asia 20-23 ET,64,71.9,0.438,28.03
+GC,4h,12,0.01,2.0,0,No HTF filter,off,No session filter (24h),212,56.1,0.123,26.08
+NQ,15m,48,0.015,2.5,0,No HTF filter,off,No session filter (24h),61,62.3,0.246,15.01
+NQ,1d,48,0.03,2.5,0,No HTF filter,off,No session filter (24h),31,61.3,0.226,7.01
+NQ,1h,12,0.01,2.5,0,No HTF filter,off,No session filter (24h),63,57.1,0.143,9.01
+NQ,4h,20,0.025,3.5,1,Require HTF EMA20 + slope alignment (1h gated by 4h+1d; 15m by 1h+4h; 4h by 1d),off,No session filter (24h),73,63.0,0.26,18.98
