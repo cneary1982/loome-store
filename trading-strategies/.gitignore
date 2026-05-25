@@ -8,3 +8,6 @@ venv/
 
 # Raw vendor exports (regenerate from Databento)
 data/_raw_*.csv
+
+# Live trader runtime state (never commit; contains open positions)
+live_state.json

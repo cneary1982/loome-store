@@ -41,20 +41,33 @@ Three optional filters can be stacked on top of every signal:
 ```
 trading-strategies/
 ├── README.md                          ← you are here
-├── requirements.txt                   pandas, numpy
+├── RISK.md                            live-trading risks + pre-flight checklist
+├── CONTRIBUTING.md                    how to add features and submit PRs
+├── LICENSE                            MIT
+├── requirements.txt                   pandas, numpy, requests
+├── .github/workflows/sweep.yml        CI: runs the full sweep on every push/PR
+│
+│ Backtest path (futures: ES / NQ / GC)
 ├── backtest.py                        regime + ATR backtest engine
 ├── filters.py                         session windows + HTF trend alignment
 ├── sweep_all.py                       exhaustive ~4,200-config sweep
+├── strategy.py                        signal logic factored for streaming
 ├── process_databento.py               raw Databento → continuous front-month CSVs
+│
+│ Live-trading path (Tradier; ETF proxies SPY / QQQ / GLD)
+├── tradier.py                         REST client (sandbox + live)
+├── live_trader.py                     runner: polls, signals, sizes, places orders
+│
+│ Data and results
 ├── data/                              price bars (UTC, tz-aware)
-│   ├── README.md                      data schema + how to refresh
+│   ├── README.md
 │   ├── ES_{15m,60m,240m,1d}.csv
 │   ├── NQ_{15m,60m,240m,1d}.csv
 │   └── GC_{15m,60m,240m,1d}.csv
 └── results/                           committed backtest outputs
-    ├── README.md                      column glossary for the CSVs
-    ├── sweep_all.csv                  every config the sweep tested
-    └── best_per_cell_by_total_R.csv   winning config per (symbol, timeframe)
+    ├── README.md
+    ├── sweep_all.csv
+    └── best_per_cell_by_total_R.csv
 ```
 
 ## Glossary (the short version)
@@ -122,9 +135,70 @@ Pull requests welcome. Concrete open ideas:
 
 If you find something that improves total R across the cells, open a PR with the updated `results/sweep_all.csv` so the headline numbers stay current.
 
+## Live trading (Tradier, ETF proxies)
+
+> **Read [`RISK.md`](RISK.md) before flipping `TRADIER_ENV` to `live`.** The script will refuse to start otherwise.
+
+Tradier doesn't trade futures, so live trading uses ETF substitutes:
+
+| Backtested futures | ETF proxy on Tradier |
+|---|---|
+| ES (S&P 500) | **SPY** |
+| NQ (Nasdaq 100) | **QQQ** |
+| GC (Gold) | **GLD** |
+
+These trade RTH only (09:30-16:00 ET) — none of the futures-overnight signals fire. The strategy's daily and intraday RTH signals translate directly; everything else does not.
+
+### Quick start (sandbox, $0 risk)
+
+1. Get a free sandbox token at https://sandbox.tradier.com
+2. Find your sandbox account ID in the dashboard
+3. Run:
+
+```bash
+export TRADIER_TOKEN='<sandbox token>'
+export TRADIER_ACCOUNT_ID='<sandbox account id>'
+# TRADIER_ENV defaults to 'sandbox' - safe by default
+
+pip install -r requirements.txt
+python live_trader.py --symbol SPY --timeframe 15m \
+    --lookback 48 --threshold 0.015 --atr-mult 2.5
+```
+
+The script polls every 60 seconds, runs the strategy on Tradier's bars, and places simulated market orders when the regime flips. State (open positions, daily PnL) lives in `live_state.json` next to the script.
+
+### Sizing and safety knobs
+
+| Env var | Default | What it controls |
+|---|---|---|
+| `RISK_PER_TRADE` | `25` | Dollars risked per stop-out. Shares = `floor(RISK / (atr_mult * ATR))` |
+| `MAX_OPEN_POSITIONS` | `1` | Concurrent open positions across all symbols |
+| `MAX_DAILY_LOSS` | `-100` | If daily realized PnL goes below this, halt for the day |
+| `TRADIER_ENV` | `sandbox` | Set to `live` to use real money (also requires `TRADIER_LIVE_CONFIRM`) |
+| `TRADIER_LIVE_CONFIRM` | unset | Must equal `I have read RISK.md` to flip live |
+
+### Going live
+
+When you've worked through [`RISK.md`](RISK.md)'s pre-flight checklist:
+
+```bash
+export TRADIER_TOKEN='<live token from developer.tradier.com>'
+export TRADIER_ACCOUNT_ID='<live account id>'
+export TRADIER_ENV=live
+export TRADIER_LIVE_CONFIRM='I have read RISK.md'
+export RISK_PER_TRADE=10           # start conservative
+export MAX_DAILY_LOSS=-30
+
+python live_trader.py --symbol SPY ...
+```
+
+The script will throw `TradierError` and refuse to run if any of the live guards aren't set correctly.
+
 ## Data
 
 Price bars come from [Databento](https://databento.com) (CME `GLBX.MDP3` feed) and are stitched into continuous front-month series by `process_databento.py`. The raw multi-contract exports are gitignored; only the clean per-(symbol, timeframe) CSVs are committed. See [`data/README.md`](data/README.md) for the schema and refresh instructions.
+
+Tradier provides its own bar history via `tradier.py` (`daily_bars` / `intraday_bars`), so the live trader doesn't need a separate data subscription.
 
 ## License
 
