@@ -1,0 +1,48 @@
+name: backtest-sweep
+
+# Re-runs the full ~4,200-config sweep on every push and PR, then uploads the
+# refreshed results CSVs as a downloadable artifact. PR authors can compare
+# their numbers against main without running anything locally.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run dashboard-default backtest (smoke test)
+        run: python backtest.py
+
+      - name: Run full parameter sweep
+        run: python sweep_all.py --no-glossary
+
+      - name: Upload refreshed results
+        uses: actions/upload-artifact@v4
+        with:
+          name: sweep-results
+          path: |
+            results/sweep_all.csv
+            results/best_per_cell_by_total_R.csv
+
+      - name: Show winners table
+        run: |
+          echo "## Best config per (symbol, timeframe)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat results/best_per_cell_by_total_R.csv >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
