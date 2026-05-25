@@ -1,0 +1,14 @@
+strategy,symbol,timeframe,trades,win_rate,expectancy,total_R
+MACDTrendStack,QQQ,1h,67,32.8,-0.015,-1.0
+MACDTrendStack,GLD,4h,16,43.8,0.312,5.0
+MACDTrendStack,SPY,1d,5,40.0,0.2,1.0
+BBSqueeze,QQQ,1h,152,51.3,-0.102,-15.5
+BBSqueeze,SPY,1h,147,57.8,0.012,1.75
+FiveBarPullback,QQQ,15m,76,65.8,0.151,11.5
+FiveBarPullback,SPY,15m,64,50.0,-0.125,-8.0
+BigJohnson,GLD,5m,566,40.8,-0.048,-27.0
+BigJohnson,QQQ,5m,806,43.9,0.025,20.0
+InverseFVG,GLD,5m,772,41.8,-0.024,-18.33
+InverseFVG,QQQ,5m,1161,41.7,-0.027,-31.67
+ICTFVGSessionTap,QQQ,5m,426,18.5,-0.073,-31.0
+ICTFVGSessionTap,GLD,5m,0,0.0,0.0,0.0
