@@ -21,6 +21,7 @@ from orchestrator import RegimeBreakout
 from strategies_lib import (
     BigJohnson, InverseFVG, ICTFVGSessionTap, MACDTrendStack,
     FiveBarPullback, BBSqueeze, ConnorsRSI2, NearysIFVG,
+    OpeningRangeBreakout,
 )
 
 STRATEGIES = [
@@ -68,4 +69,9 @@ STRATEGIES = [
     # ── S07 Nearys IFVG MTF ───────────────────────────────────────────────
     NearysIFVG(name="QQQ_5m_nearys",  symbol="QQQ", timeframe="5m"),
     NearysIFVG(name="GLD_5m_nearys",  symbol="GLD", timeframe="5m"),
+
+    # ── ORB Opening Range Breakout (30-min range) ─────────────────────────
+    OpeningRangeBreakout(name="SPY_5m_orb30", symbol="SPY", timeframe="5m"),
+    OpeningRangeBreakout(name="QQQ_5m_orb30", symbol="QQQ", timeframe="5m"),
+    OpeningRangeBreakout(name="GLD_5m_orb30", symbol="GLD", timeframe="5m"),
 ]

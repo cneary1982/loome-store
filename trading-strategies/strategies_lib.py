@@ -569,3 +569,83 @@ class NearysIFVG(Strategy):
                               tp_distance=p["tp_mult"] * a,
                               sl_distance=p["sl_mult"] * a,
                               bar_ts=str(bars.index[i]))
+
+
+# ─── ORB — Opening Range Breakout (Toby Crabel style) ───────────────────────
+class OpeningRangeBreakout(Strategy):
+    """First N-minute Opening Range Breakout.
+
+    Range is defined by the first `range_minutes` of the NY session
+    (9:30 ET onward). After the range closes, the first bar that closes
+    above the range high triggers a long; first bar below the low triggers
+    a short. One trade per day per symbol — second-breakout signals are
+    suppressed.
+
+    Stop = opposite side of the range (range_height).
+    Target = `tp_mult_range` × range height (default 1.5).
+    """
+    def __init__(self, name, symbol, timeframe,
+                 range_minutes=30,
+                 tp_mult_range=1.5,
+                 atr_len=14):
+        super().__init__(name, symbol, timeframe)
+        self.p = dict(range_minutes=range_minutes,
+                      tp_mult_range=tp_mult_range,
+                      atr_len=atr_len)
+
+    def signal(self, bars: pd.DataFrame, now_utc: pd.Timestamp) -> Optional[StrategySignal]:
+        p = self.p
+        if len(bars) < p["atr_len"] + 5:
+            return None
+        # Last bar's NY date — we only care about today's range
+        last_idx = bars.index[-1]
+        ny_last = last_idx.tz_convert("America/New_York")
+        if ny_last.weekday() >= 5:
+            return None
+        ny_date = ny_last.date()
+        # Today's bars only (NY-local)
+        ny_index = bars.index.tz_convert("America/New_York")
+        today_mask = ny_index.date == ny_date
+        today = bars.loc[today_mask]
+        if today.empty:
+            return None
+        # Define the opening range: 9:30 → 9:30 + range_minutes
+        ny_today = today.index.tz_convert("America/New_York")
+        td_min = ny_today.hour * 60 + ny_today.minute  # NY-minute of day per bar
+        in_range_mask  = (td_min >= 9 * 60 + 30) & (td_min < 9 * 60 + 30 + p["range_minutes"])
+        post_range_mask= td_min >= 9 * 60 + 30 + p["range_minutes"]
+        range_bars     = today.loc[in_range_mask]
+        post_bars      = today.loc[post_range_mask]
+        if range_bars.empty or post_bars.empty:
+            return None
+        rng_hi = float(range_bars["High"].max())
+        rng_lo = float(range_bars["Low"].min())
+        rng_h  = rng_hi - rng_lo
+        if rng_h <= 0:
+            return None
+        # Is THIS bar (the last one) the first breakout bar of the day?
+        last_close = float(today["Close"].iloc[-1])
+        last_ts    = today.index[-1]
+        # Bars in today's post-range slice that came before the current bar
+        prior_post = post_bars.iloc[:-1] if post_bars.index[-1] == last_ts else post_bars
+        if not prior_post.empty:
+            already_broke = (prior_post["Close"] > rng_hi).any() or (prior_post["Close"] < rng_lo).any()
+            if already_broke:
+                return None
+        side = None
+        if last_close > rng_hi:
+            side = "long"
+        elif last_close < rng_lo:
+            side = "short"
+        if side is None:
+            return None
+        # Use the range height as our risk unit, but report ATR for sizing too
+        atr_ = _atr(bars["High"], bars["Low"], bars["Close"], p["atr_len"])
+        a = float(atr_.iloc[-1])
+        if not np.isfinite(a) or a <= 0:
+            a = rng_h  # fallback so shares_for_risk has something sane
+        return StrategySignal(side=side, entry_estimate=last_close,
+                              atr_at_signal=a,
+                              tp_distance=p["tp_mult_range"] * rng_h,
+                              sl_distance=rng_h,
+                              bar_ts=str(last_ts))

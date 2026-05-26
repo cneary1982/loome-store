@@ -18,6 +18,7 @@ from backtest_generic import backtest_strategy
 from strategies_lib import (
     BigJohnson, InverseFVG, ICTFVGSessionTap, MACDTrendStack,
     FiveBarPullback, BBSqueeze, ConnorsRSI2, NearysIFVG,
+    OpeningRangeBreakout,
 )
 
 DATA = Path("data/etf")
@@ -52,6 +53,9 @@ CONFIGS = [
     (ConnorsRSI2,       dict(),                                            "GLD", "15m", 100),
     (NearysIFVG,        dict(),                                            "QQQ", "5m",  150),
     (NearysIFVG,        dict(),                                            "GLD", "5m",  150),
+    (OpeningRangeBreakout, dict(range_minutes=30, tp_mult_range=1.5),      "SPY", "5m",  100),
+    (OpeningRangeBreakout, dict(range_minutes=30, tp_mult_range=1.5),      "QQQ", "5m",  100),
+    (OpeningRangeBreakout, dict(range_minutes=30, tp_mult_range=1.5),      "GLD", "5m",  100),
 ]
 
 
