@@ -20,7 +20,7 @@ at runtime. To add a new one: import its class and append an instance.
 from orchestrator import RegimeBreakout
 from strategies_lib import (
     BigJohnson, InverseFVG, ICTFVGSessionTap, MACDTrendStack,
-    FiveBarPullback, BBSqueeze,
+    FiveBarPullback, BBSqueeze, ConnorsRSI2, NearysIFVG,
 )
 
 STRATEGIES = [
@@ -59,4 +59,13 @@ STRATEGIES = [
     ICTFVGSessionTap(name="GLD_5m_ictfvg_london",
                      symbol="GLD", timeframe="5m",
                      session_start_h=2.0, session_end_h=5.0, htf="240"),
+
+    # ── S01 Connors RSI(2) ───────────────────────────────────────────────
+    ConnorsRSI2(name="SPY_15m_connors", symbol="SPY", timeframe="15m"),
+    ConnorsRSI2(name="QQQ_15m_connors", symbol="QQQ", timeframe="15m"),
+    ConnorsRSI2(name="GLD_15m_connors", symbol="GLD", timeframe="15m"),
+
+    # ── S07 Nearys IFVG MTF ───────────────────────────────────────────────
+    NearysIFVG(name="QQQ_5m_nearys",  symbol="QQQ", timeframe="5m"),
+    NearysIFVG(name="GLD_5m_nearys",  symbol="GLD", timeframe="5m"),
 ]

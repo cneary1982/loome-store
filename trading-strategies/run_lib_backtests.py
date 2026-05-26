@@ -17,7 +17,7 @@ from backtest import load_csv, resample
 from backtest_generic import backtest_strategy
 from strategies_lib import (
     BigJohnson, InverseFVG, ICTFVGSessionTap, MACDTrendStack,
-    FiveBarPullback, BBSqueeze,
+    FiveBarPullback, BBSqueeze, ConnorsRSI2, NearysIFVG,
 )
 
 DATA = Path("data/etf")
@@ -47,6 +47,11 @@ CONFIGS = [
                              htf="60"),                                    "QQQ", "5m",  300),
     (ICTFVGSessionTap,  dict(session_start_h=2.0,  session_end_h=5.0,
                              htf="240"),                                   "GLD", "5m",  300),
+    (ConnorsRSI2,       dict(),                                            "SPY", "15m", 100),
+    (ConnorsRSI2,       dict(),                                            "QQQ", "15m", 100),
+    (ConnorsRSI2,       dict(),                                            "GLD", "15m", 100),
+    (NearysIFVG,        dict(),                                            "QQQ", "5m",  150),
+    (NearysIFVG,        dict(),                                            "GLD", "5m",  150),
 ]
 
 

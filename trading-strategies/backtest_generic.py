@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 
 from orchestrator import Strategy
+from trading_window import in_entry_window
 
 
 @dataclass
@@ -32,12 +33,16 @@ class GenericTrade:
 
 
 def backtest_strategy(strategy: Strategy, df: pd.DataFrame,
-                      warmup: int = 250, window: int = 500) -> dict:
+                      warmup: int = 250, window: int = 500,
+                      use_entry_window: bool = True) -> dict:
     """Walk closed bars; on each, call strategy.signal(); simulate exits.
 
     `window`: only the last `window` bars are passed to signal(). This matches
     how live trading works (broker fetches a bounded window) and keeps the
     backtester O(n) instead of O(n²) when strategies re-derive state each call.
+
+    `use_entry_window`: if True (default), only accept signals during the
+    global 9:30-13:00 ET entry window (matches the live orchestrator policy).
     """
     if len(df) <= warmup + 2:
         return _empty()
@@ -49,6 +54,9 @@ def backtest_strategy(strategy: Strategy, df: pd.DataFrame,
     while i < len(df) - 1:
         start = max(0, i + 1 - window)
         view = df.iloc[start: i + 1]
+        if use_entry_window and not in_entry_window(view.index[-1]):
+            i += 1
+            continue
         sig  = strategy.signal(view, view.index[-1])
         if sig is None:
             i += 1

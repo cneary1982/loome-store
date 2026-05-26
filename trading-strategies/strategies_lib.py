@@ -6,6 +6,8 @@ defined in `orchestrator.Strategy`, so the orchestrator can run all of them
 in parallel and the per-symbol lock decides which one actually trades.
 
 Ports included:
+  S01   Connors RSI(2)       Mean-reversion: RSI(2) extreme + SMA50 trend
+  S07   Nearys IFVG MTF      Daily bias filter + FVG/IFVG midline entry
   S08   Big Johnson 4.0      RSI exhaustion + MACD cross + ADX filter
   S09   IFVG Inverse FVG     3-candle gap detection → inversion → close-inside
   S10   ICT FVG Midline Tap  Track 1H/4H FVGs, fire on midline tap in session
@@ -15,7 +17,8 @@ Ports included:
 
 All strategies emit `StrategySignal(side, entry_estimate, atr_at_signal,
 tp_distance, sl_distance, bar_ts)`. The orchestrator handles position
-sizing (vol-targeted via shares_for_risk) and per-symbol locking.
+sizing (vol-targeted via shares_for_risk), per-symbol locking, and the
+global 9:30-13:00 ET entry window with 16:00 ET EOD flat.
 """
 from __future__ import annotations
 
@@ -438,6 +441,130 @@ class BBSqueeze(Strategy):
         if side is None:
             return None
         return StrategySignal(side=side, entry_estimate=float(c.iloc[i]),
+                              atr_at_signal=a,
+                              tp_distance=p["tp_mult"] * a,
+                              sl_distance=p["sl_mult"] * a,
+                              bar_ts=str(bars.index[i]))
+
+
+# ─── S01 — Connors RSI(2) Mean Reversion ────────────────────────────────────
+class ConnorsRSI2(Strategy):
+    """Larry Connors' RSI(2) mean-reversion. Fires when RSI(2) crosses below 10
+    while above the trend SMA. Exit is handled by the framework's ATR exit,
+    so we set TP relatively wide and SL tight (mean-reversion edge).
+    """
+    def __init__(self, name, symbol, timeframe,
+                 rsi_len=2, rsi_buy=10.0,
+                 trend_ma_len=50, use_trend_filter=True,
+                 atr_len=14, sl_mult=1.0, tp_mult=2.0):
+        super().__init__(name, symbol, timeframe)
+        self.p = dict(rsi_len=rsi_len, rsi_buy=rsi_buy,
+                      trend_ma_len=trend_ma_len, use_trend_filter=use_trend_filter,
+                      atr_len=atr_len, sl_mult=sl_mult, tp_mult=tp_mult)
+
+    def signal(self, bars: pd.DataFrame, now_utc: pd.Timestamp) -> Optional[StrategySignal]:
+        p = self.p
+        if len(bars) < max(p["trend_ma_len"], p["atr_len"]) + 5:
+            return None
+        c, h, l = bars["Close"], bars["High"], bars["Low"]
+        rsi = _rsi(c, p["rsi_len"])
+        ma  = _sma(c, p["trend_ma_len"])
+        atr_ = _atr(h, l, c, p["atr_len"])
+        i = -1
+        a = float(atr_.iloc[i])
+        if not np.isfinite(a) or a <= 0:
+            return None
+        uptrend = (not p["use_trend_filter"]) or (c.iloc[i] > ma.iloc[i])
+        crossed_under = rsi.iloc[i] < p["rsi_buy"] and rsi.iloc[i-1] >= p["rsi_buy"]
+        if not (uptrend and crossed_under):
+            return None
+        return StrategySignal(side="long", entry_estimate=float(c.iloc[i]),
+                              atr_at_signal=a,
+                              tp_distance=p["tp_mult"] * a,
+                              sl_distance=p["sl_mult"] * a,
+                              bar_ts=str(bars.index[i]))
+
+
+# ─── S07 — Nearys IFVG × FVG + MTF Bias ────────────────────────────────────
+class NearysIFVG(Strategy):
+    """FVG/IFVG entry with daily directional bias from prior-day close.
+
+    Bias rule (Prior Close Simple): bullish if today's prior daily close >
+    the day-before's daily close. Only take longs on bullish days, shorts on
+    bearish days. Entry fires when current bar closes inside the middle 50%
+    of an active FVG (or after inversion of one).
+    """
+    def __init__(self, name, symbol, timeframe,
+                 atr_len=14, atr_gap_mult=0.5,
+                 sl_mult=1.5, tp_mult=2.0,
+                 use_daily_bias=True, fvg_extend=120):
+        super().__init__(name, symbol, timeframe)
+        self.p = dict(atr_len=atr_len, atr_gap_mult=atr_gap_mult,
+                      sl_mult=sl_mult, tp_mult=tp_mult,
+                      use_daily_bias=use_daily_bias, fvg_extend=fvg_extend)
+
+    def signal(self, bars: pd.DataFrame, now_utc: pd.Timestamp) -> Optional[StrategySignal]:
+        p = self.p
+        if len(bars) < max(p["atr_len"] + 5, p["fvg_extend"] + 5):
+            return None
+        h, l, c, o = bars["High"], bars["Low"], bars["Close"], bars["Open"]
+        atr_ = _atr(h, l, c, p["atr_len"])
+        i = len(bars) - 1
+        a = float(atr_.iloc[i])
+        if not np.isfinite(a) or a <= 0:
+            return None
+        min_gap = p["atr_gap_mult"] * a
+        # Daily bias from prior close vs the day before
+        bias = 0
+        if p["use_daily_bias"]:
+            daily = bars.resample("1D").agg(
+                {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
+            ).dropna()
+            if len(daily) >= 3:
+                bias = 1 if daily["Close"].iloc[-2] > daily["Close"].iloc[-3] else -1
+        # Scan recent bars for active FVGs
+        n = len(bars)
+        start = max(2, n - p["fvg_extend"] - 5)
+        bull_fvg = bear_fvg = None  # (top, bot, mid, created_idx, inverted, inv_dir)
+        for k in range(start, n):
+            if l.iloc[k] > h.iloc[k-2] and c.iloc[k-1] > h.iloc[k-2]:
+                if (l.iloc[k] - h.iloc[k-2]) >= min_gap:
+                    bull_fvg = [l.iloc[k], h.iloc[k-2], (l.iloc[k] + h.iloc[k-2]) / 2, k, False, 1]
+            if h.iloc[k] < l.iloc[k-2] and c.iloc[k-1] < l.iloc[k-2]:
+                if (l.iloc[k-2] - h.iloc[k]) >= min_gap:
+                    bear_fvg = [l.iloc[k-2], h.iloc[k], (l.iloc[k-2] + h.iloc[k]) / 2, k, False, -1]
+        # Mark inversions on most recent FVG-pair
+        for z in (bull_fvg, bear_fvg):
+            if z is None:
+                continue
+            for k in range(z[3] + 1, n):
+                cbot = min(o.iloc[k], c.iloc[k]); ctop = max(o.iloc[k], c.iloc[k])
+                if z[5] == 1 and cbot < z[1]:
+                    z[4] = True; z[5] = -1
+                elif z[5] == -1 and ctop > z[0]:
+                    z[4] = True; z[5] = 1
+        last_close = float(c.iloc[i])
+        side = None
+        for z in (bull_fvg, bear_fvg):
+            if z is None:
+                continue
+            zone_size = z[0] - z[1]
+            zone25 = z[1] + zone_size * 0.25
+            zone75 = z[1] + zone_size * 0.75
+            if zone25 <= last_close <= zone75:
+                proposed_side = "long" if z[5] == 1 else "short"
+                if p["use_daily_bias"]:
+                    if bias == 1 and proposed_side == "short":
+                        continue
+                    if bias == -1 and proposed_side == "long":
+                        continue
+                    if bias == 0:
+                        continue
+                side = proposed_side
+                break
+        if side is None:
+            return None
+        return StrategySignal(side=side, entry_estimate=last_close,
                               atr_at_signal=a,
                               tp_distance=p["tp_mult"] * a,
                               sl_distance=p["sl_mult"] * a,
