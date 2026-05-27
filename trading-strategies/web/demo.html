@@ -50,14 +50,14 @@ tailwind.config = {
     <p class="font-label-sm text-label-sm text-on-surface-variant opacity-70 uppercase tracking-widest mt-xs">Alpine Workspace</p>
   </div>
   <nav class="flex-1 space-y-1">
-    <a class="flex items-center gap-sm px-sm py-base bg-primary text-on-primary rounded-lg font-bold transition-colors" href="#dash" onclick="show('dash')"><span class="material-symbols-outlined">dashboard</span><span class="font-label-md text-label-md">Dashboard</span></a>
-    <a class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg" href="#strat" onclick="show('strat')"><span class="material-symbols-outlined">auto_awesome</span><span class="font-label-md text-label-md">Strategies</span></a>
-    <a class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg" href="#sig" onclick="show('sig')"><span class="material-symbols-outlined">sensors</span><span class="font-label-md text-label-md">Signals</span></a>
-    <a class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg" href="#bt" onclick="show('bt')"><span class="material-symbols-outlined">science</span><span class="font-label-md text-label-md">Backtest</span></a>
-    <a class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg" href="#port" onclick="show('port')"><span class="material-symbols-outlined">account_balance_wallet</span><span class="font-label-md text-label-md">Portfolio</span></a>
-    <a class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg" href="#anal" onclick="show('anal')"><span class="material-symbols-outlined">query_stats</span><span class="font-label-md text-label-md">Analytics</span></a>
-    <a class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg" href="#term" onclick="show('term')"><span class="material-symbols-outlined">terminal</span><span class="font-label-md text-label-md">Terminal</span></a>
-    <a class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg" href="#set" onclick="show('set')"><span class="material-symbols-outlined">settings</span><span class="font-label-md text-label-md">Settings</span></a>
+    <a data-tab="dash"  class="flex items-center gap-sm px-sm py-base bg-primary text-on-primary rounded-lg font-bold transition-colors" href="#dash"  onclick="show('dash');return false"><span class="material-symbols-outlined">dashboard</span><span class="font-label-md text-label-md">Dashboard</span></a>
+    <a data-tab="strat" class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#strat" onclick="show('strat');return false"><span class="material-symbols-outlined">auto_awesome</span><span class="font-label-md text-label-md">Strategies</span></a>
+    <a data-tab="sig"   class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#sig"   onclick="show('sig');return false"><span class="material-symbols-outlined">sensors</span><span class="font-label-md text-label-md">Signals</span></a>
+    <a data-tab="bt"    class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#bt"    onclick="show('bt');return false"><span class="material-symbols-outlined">science</span><span class="font-label-md text-label-md">Backtest</span></a>
+    <a data-tab="port"  class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#port"  onclick="show('port');return false"><span class="material-symbols-outlined">account_balance_wallet</span><span class="font-label-md text-label-md">Portfolio</span></a>
+    <a data-tab="anal"  class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#anal"  onclick="show('anal');return false"><span class="material-symbols-outlined">query_stats</span><span class="font-label-md text-label-md">Analytics</span></a>
+    <a data-tab="term"  class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#term"  onclick="show('term');return false"><span class="material-symbols-outlined">terminal</span><span class="font-label-md text-label-md">Terminal</span></a>
+    <a data-tab="set"   class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#set"   onclick="show('set');return false"><span class="material-symbols-outlined">settings</span><span class="font-label-md text-label-md">Settings</span></a>
   </nav>
   <div class="mt-auto pt-md border-t border-outline-variant">
     <button class="w-full py-sm bg-error/10 border border-error/30 text-error rounded-lg font-label-md text-label-md font-bold hover:bg-error hover:text-on-error transition-all flex items-center justify-center gap-xs">
@@ -289,13 +289,14 @@ function show(id) {
     document.getElementById(k).classList.toggle("hidden", k !== id);
   });
   document.getElementById("pageTitle").textContent = TABS[id].label;
-  document.querySelectorAll("aside a").forEach(a => {
-    const active = a.getAttribute("href") === "#" + id;
-    a.className = a.className
-      .replace("bg-primary text-on-primary font-bold", "text-on-surface-variant hover:bg-secondary-container")
-      .replace("text-on-surface-variant hover:bg-secondary-container", active ? "bg-primary text-on-primary font-bold" : "text-on-surface-variant hover:bg-secondary-container");
+  document.querySelectorAll("aside nav a").forEach(a => {
+    const active = a.dataset.tab === id;
+    a.className = "flex items-center gap-sm px-sm py-base rounded-lg transition-colors " + (active
+      ? "bg-primary text-on-primary font-bold"
+      : "text-on-surface-variant hover:bg-secondary-container");
   });
 }
+window.show = show;
 
 // Populate strategies table
 const STRATS = [
