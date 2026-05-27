@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>Loomi.AI — Demo Preview</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        "primary": "#000", "on-primary": "#fff", "background": "#f9f9f9",
+        "surface": "#f9f9f9", "surface-container-lowest": "#fff",
+        "surface-container-low": "#f3f3f4", "surface-container": "#eee",
+        "surface-container-high": "#e8e8e8", "surface-container-highest": "#e2e2e2",
+        "outline": "#76777d", "outline-variant": "#c6c6cd",
+        "on-surface": "#1a1c1c", "on-surface-variant": "#45464d",
+        "secondary-container": "#e1e3e4",
+        "tertiary-fixed": "#6ffbbe", "on-tertiary-fixed": "#002113",
+        "on-tertiary-container": "#009668",
+        "error": "#ba1a1a", "on-error": "#fff",
+        "gain": "#10B981", "loss": "#EF4444",
+      },
+      spacing: {"sm":"12px","md":"24px","lg":"40px","xl":"64px","xs":"4px","base":"8px","margin":"32px"},
+      fontFamily: {"headline-md":["Sora"],"label-md":["Sora"],"label-sm":["Sora"],"data-mono":["Inter"],"body-md":["Inter"]},
+      fontSize: {
+        "headline-md":["24px",{"lineHeight":"1.3","letterSpacing":"-0.01em","fontWeight":"600"}],
+        "label-md":["14px",{"lineHeight":"1.2","fontWeight":"500"}],
+        "label-sm":["12px",{"lineHeight":"1","fontWeight":"600"}],
+        "data-mono":["14px",{"lineHeight":"1","fontWeight":"500"}],
+        "body-md":["16px",{"lineHeight":"1.5","fontWeight":"400"}],
+      },
+    },
+  },
+};
+</script>
+<style>
+  body{background:#f9f9f9;color:#1a1c1c;font-family:Inter,sans-serif}
+  .material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400;vertical-align:middle}
+</style>
+</head>
+<body>
+
+<!-- ─── SIDEBAR ───────────────────────────────────────────────────── -->
+<aside class="h-screen w-64 fixed left-0 top-0 flex flex-col bg-surface-container-lowest border-r border-outline-variant py-md px-sm z-50">
+  <div class="mb-lg px-xs">
+    <h1 class="font-headline-md text-headline-md font-bold text-primary tracking-tighter">Loomi.AI</h1>
+    <p class="font-label-sm text-label-sm text-on-surface-variant opacity-70 uppercase tracking-widest mt-xs">Alpine Workspace</p>
+  </div>
+  <nav class="flex-1 space-y-1">
+    <a data-tab="dash"  class="flex items-center gap-sm px-sm py-base bg-primary text-on-primary rounded-lg font-bold transition-colors" href="#dash"  onclick="show('dash');return false"><span class="material-symbols-outlined">dashboard</span><span class="font-label-md text-label-md">Dashboard</span></a>
+    <a data-tab="strat" class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#strat" onclick="show('strat');return false"><span class="material-symbols-outlined">auto_awesome</span><span class="font-label-md text-label-md">Strategies</span></a>
+    <a data-tab="sig"   class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#sig"   onclick="show('sig');return false"><span class="material-symbols-outlined">sensors</span><span class="font-label-md text-label-md">Signals</span></a>
+    <a data-tab="bt"    class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#bt"    onclick="show('bt');return false"><span class="material-symbols-outlined">science</span><span class="font-label-md text-label-md">Backtest</span></a>
+    <a data-tab="port"  class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#port"  onclick="show('port');return false"><span class="material-symbols-outlined">account_balance_wallet</span><span class="font-label-md text-label-md">Portfolio</span></a>
+    <a data-tab="anal"  class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#anal"  onclick="show('anal');return false"><span class="material-symbols-outlined">query_stats</span><span class="font-label-md text-label-md">Analytics</span></a>
+    <a data-tab="term"  class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#term"  onclick="show('term');return false"><span class="material-symbols-outlined">terminal</span><span class="font-label-md text-label-md">Terminal</span></a>
+    <a data-tab="set"   class="flex items-center gap-sm px-sm py-base text-on-surface-variant hover:bg-secondary-container rounded-lg transition-colors" href="#set"   onclick="show('set');return false"><span class="material-symbols-outlined">settings</span><span class="font-label-md text-label-md">Settings</span></a>
+  </nav>
+  <div class="mt-auto pt-md border-t border-outline-variant">
+    <button class="w-full py-sm bg-error/10 border border-error/30 text-error rounded-lg font-label-md text-label-md font-bold hover:bg-error hover:text-on-error transition-all flex items-center justify-center gap-xs">
+      <span class="material-symbols-outlined">emergency_home</span> Kill Switch
+    </button>
+  </div>
+</aside>
+
+<!-- ─── TOP BAR ───────────────────────────────────────────────────── -->
+<header class="flex justify-between items-center h-16 w-full px-md ml-64 max-w-[calc(100%-16rem)] border-b border-outline-variant bg-surface sticky top-0 z-40">
+  <div class="flex items-center gap-md">
+    <h2 id="pageTitle" class="font-headline-md text-headline-md font-bold text-primary">Command Center</h2>
+    <div class="flex items-center gap-sm bg-surface-container-low px-md py-xs rounded-full border border-outline-variant/30">
+      <span class="w-2 h-2 rounded-full bg-on-tertiary-container animate-pulse"></span>
+      <span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-tighter">Live · Demo Data</span>
+    </div>
+  </div>
+  <div class="flex items-center gap-md">
+    <span class="px-md py-xs rounded font-label-sm font-bold bg-tertiary-fixed text-on-tertiary-fixed">sandbox</span>
+  </div>
+</header>
+
+<!-- ─── MAIN ──────────────────────────────────────────────────────── -->
+<main class="ml-64 p-margin max-w-7xl">
+
+<!-- ── DASHBOARD ──────────────────────────────────────────────────── -->
+<section id="dash">
+  <div class="grid grid-cols-4 gap-md mb-md">
+    <div class="bg-surface-container-lowest p-md rounded-xl border border-outline-variant/40">
+      <div class="flex justify-between items-start mb-xs"><p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Cash Available</p><span class="material-symbols-outlined text-on-surface-variant text-[18px]">account_balance</span></div>
+      <p class="font-headline-md text-headline-md font-bold">$48,420.18</p>
+    </div>
+    <div class="bg-surface-container-lowest p-md rounded-xl border border-outline-variant/40">
+      <div class="flex justify-between items-start mb-xs"><p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Daily P&amp;L</p><span class="material-symbols-outlined text-gain text-[18px]">trending_up</span></div>
+      <p class="font-headline-md text-headline-md font-bold text-gain">+$340.25</p>
+    </div>
+    <div class="bg-surface-container-lowest p-md rounded-xl border border-outline-variant/40">
+      <div class="flex justify-between items-start mb-xs"><p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Open Positions</p><span class="material-symbols-outlined text-on-surface-variant text-[18px]">inventory_2</span></div>
+      <p class="font-headline-md text-headline-md font-bold">3</p>
+    </div>
+    <div class="bg-surface-container-lowest p-md rounded-xl border border-outline-variant/40">
+      <div class="flex justify-between items-start mb-xs"><p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">Strategies Active</p><span class="material-symbols-outlined text-on-surface-variant text-[18px]">auto_awesome</span></div>
+      <p class="font-headline-md text-headline-md font-bold">18 / 20</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-12 gap-md mb-md">
+    <div class="col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+      <h3 class="font-headline-md text-headline-md mb-md">Orchestrator Status</h3>
+      <div class="grid grid-cols-2 gap-md">
+        <div><p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Broker</p><p class="font-data-mono text-data-mono font-bold">Tradier · sandbox</p></div>
+        <div><p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Last Tick</p><p class="font-data-mono text-data-mono font-bold">14:32:18</p></div>
+        <div><p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Max Daily Loss</p><p class="font-data-mono text-data-mono font-bold">$1,500.00</p></div>
+        <div><p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Trades Today</p><p class="font-data-mono text-data-mono font-bold">7</p></div>
+      </div>
+    </div>
+    <div class="col-span-4 bg-primary text-on-primary rounded-xl p-md flex flex-col">
+      <h3 class="font-label-md text-label-md mb-md opacity-70 uppercase tracking-widest">Top Backtested</h3>
+      <div class="flex-1 space-y-sm">
+        <div class="flex justify-between items-center border-b border-white/10 py-xs"><div><p class="font-data-mono font-bold">QQQ · 5m</p><p class="font-label-sm text-label-sm opacity-60">OpeningRangeBreakout 15min</p></div><p class="font-data-mono text-tertiary-fixed">+65.00 R</p></div>
+        <div class="flex justify-between items-center border-b border-white/10 py-xs"><div><p class="font-data-mono font-bold">SPY · 5m</p><p class="font-label-sm text-label-sm opacity-60">OpeningRangeBreakout 15min</p></div><p class="font-data-mono text-tertiary-fixed">+63.50 R</p></div>
+        <div class="flex justify-between items-center border-b border-white/10 py-xs"><div><p class="font-data-mono font-bold">QQQ · 5m</p><p class="font-label-sm text-label-sm opacity-60">OpeningRangeBreakout 30min</p></div><p class="font-data-mono text-tertiary-fixed">+51.50 R</p></div>
+        <div class="flex justify-between items-center border-b border-white/10 py-xs"><div><p class="font-data-mono font-bold">GLD · 15m</p><p class="font-label-sm text-label-sm opacity-60">ConnorsRSI2</p></div><p class="font-data-mono text-tertiary-fixed">+50.00 R</p></div>
+        <div class="flex justify-between items-center py-xs"><div><p class="font-data-mono font-bold">SPY · 15m</p><p class="font-label-sm text-label-sm opacity-60">ConnorsRSI2</p></div><p class="font-data-mono text-tertiary-fixed">+40.00 R</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+    <div class="p-md border-b border-outline-variant flex justify-between"><h4 class="font-label-md text-label-md uppercase tracking-widest">Open Positions</h4></div>
+    <table class="w-full text-left">
+      <thead class="bg-surface-container-low"><tr class="text-on-surface-variant text-[10px] uppercase tracking-widest"><th class="p-md">Symbol</th><th class="p-md">Strategy</th><th class="p-md">Side</th><th class="p-md">Shares</th><th class="p-md">Entry</th><th class="p-md">TP/SL</th></tr></thead>
+      <tbody class="divide-y divide-outline-variant/20">
+        <tr><td class="p-md font-bold">SPY</td><td class="p-md font-label-sm text-on-surface-variant">SPY_5m_orb30</td><td class="p-md"><span class="bg-gain/10 text-gain px-xs py-[2px] rounded font-label-sm font-bold">LONG</span></td><td class="p-md font-data-mono">12</td><td class="p-md font-data-mono">521.45</td><td class="p-md font-data-mono text-label-sm"><span class="text-gain">523.10</span> / <span class="text-loss">520.35</span></td></tr>
+        <tr><td class="p-md font-bold">QQQ</td><td class="p-md font-label-sm text-on-surface-variant">QQQ_15m_connors</td><td class="p-md"><span class="bg-gain/10 text-gain px-xs py-[2px] rounded font-label-sm font-bold">LONG</span></td><td class="p-md font-data-mono">8</td><td class="p-md font-data-mono">443.20</td><td class="p-md font-data-mono text-label-sm"><span class="text-gain">445.85</span> / <span class="text-loss">441.90</span></td></tr>
+        <tr><td class="p-md font-bold">GLD</td><td class="p-md font-label-sm text-on-surface-variant">GLD_5m_orb30</td><td class="p-md"><span class="bg-loss/10 text-loss px-xs py-[2px] rounded font-label-sm font-bold">SHORT</span></td><td class="p-md font-data-mono">15</td><td class="p-md font-data-mono">198.40</td><td class="p-md font-data-mono text-label-sm"><span class="text-gain">196.80</span> / <span class="text-loss">199.55</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── STRATEGIES ─────────────────────────────────────────────────── -->
+<section id="strat" class="hidden">
+  <div class="mb-md"><p class="text-on-surface-variant">Registered: <span class="font-bold">20</span> · Profitable in BT: <span class="font-bold text-gain">9</span></p></div>
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+    <table class="w-full text-left"><thead class="bg-surface-container-low"><tr class="text-on-surface-variant text-[10px] uppercase tracking-widest"><th class="p-md">Strategy</th><th class="p-md">Symbol</th><th class="p-md">TF</th><th class="p-md">Enabled</th><th class="p-md text-right">BT Trades</th><th class="p-md text-right">BT WR</th><th class="p-md text-right">BT Total R</th></tr></thead><tbody class="divide-y divide-outline-variant/20" id="stratBody"></tbody></table>
+  </div>
+</section>
+
+<!-- ── SIGNALS ────────────────────────────────────────────────────── -->
+<section id="sig" class="hidden">
+  <div class="grid grid-cols-12 gap-md mb-md">
+    <div class="col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-md"><span class="font-label-sm text-label-sm text-on-tertiary-container bg-tertiary-fixed px-xs py-[2px] rounded">LIVE FEED</span><h3 class="font-headline-md text-headline-md mt-sm">Active Signal Scan</h3><p class="text-on-surface-variant mt-xs">9:30–13:00 ET entry window enforced</p></div>
+    <div class="col-span-4 bg-primary text-on-primary rounded-xl p-md"><p class="font-label-sm text-label-sm opacity-70 uppercase tracking-widest">Signals This Session</p><p class="text-[40px] font-bold mt-xs">12</p></div>
+  </div>
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+    <table class="w-full text-left"><thead class="bg-surface-container-low"><tr class="text-on-surface-variant text-[10px] uppercase tracking-widest"><th class="p-md">Strategy</th><th class="p-md">Symbol · TF</th><th class="p-md">Side</th><th class="p-md">Bar (ET)</th><th class="p-md text-right">Trades Today</th></tr></thead><tbody class="divide-y divide-outline-variant/20">
+      <tr><td class="p-md font-bold">SPY_5m_orb30</td><td class="p-md font-data-mono">SPY · 5m</td><td class="p-md"><span class="bg-gain/10 text-gain px-xs py-[2px] rounded font-label-sm font-bold">LONG</span></td><td class="p-md font-data-mono">10:02:00</td><td class="p-md text-right font-data-mono">1</td></tr>
+      <tr><td class="p-md font-bold">QQQ_15m_connors</td><td class="p-md font-data-mono">QQQ · 15m</td><td class="p-md"><span class="bg-gain/10 text-gain px-xs py-[2px] rounded font-label-sm font-bold">LONG</span></td><td class="p-md font-data-mono">09:45:00</td><td class="p-md text-right font-data-mono">1</td></tr>
+      <tr><td class="p-md font-bold">QQQ_5m_orb30</td><td class="p-md font-data-mono">QQQ · 5m</td><td class="p-md"><span class="bg-gain/10 text-gain px-xs py-[2px] rounded font-label-sm font-bold">LONG</span></td><td class="p-md font-data-mono">10:02:00</td><td class="p-md text-right font-data-mono">1</td></tr>
+      <tr><td class="p-md font-bold">GLD_5m_orb30</td><td class="p-md font-data-mono">GLD · 5m</td><td class="p-md"><span class="bg-loss/10 text-loss px-xs py-[2px] rounded font-label-sm font-bold">SHORT</span></td><td class="p-md font-data-mono">10:03:00</td><td class="p-md text-right font-data-mono">1</td></tr>
+      <tr><td class="p-md font-bold">SPY_15m_breakout</td><td class="p-md font-data-mono">SPY · 15m</td><td class="p-md"><span class="bg-gain/10 text-gain px-xs py-[2px] rounded font-label-sm font-bold">LONG</span></td><td class="p-md font-data-mono">10:00:00</td><td class="p-md text-right font-data-mono">0</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ── BACKTEST ───────────────────────────────────────────────────── -->
+<section id="bt" class="hidden">
+  <div class="flex gap-sm mb-md border-b border-outline-variant">
+    <a class="px-md py-sm font-label-md text-label-md border-b-2 border-primary text-primary font-bold">Library Summary</a>
+    <a class="px-md py-sm font-label-md text-label-md text-on-surface-variant" href="#">Best ETF per Cell</a>
+    <a class="px-md py-sm font-label-md text-label-md text-on-surface-variant" href="#">Best Futures per Cell</a>
+  </div>
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+    <table class="w-full text-left"><thead class="bg-surface-container-low"><tr class="text-on-surface-variant text-[10px] uppercase tracking-widest"><th class="p-md">Strategy</th><th class="p-md">Symbol</th><th class="p-md">TF</th><th class="p-md text-right">Trades</th><th class="p-md text-right">Win Rate</th><th class="p-md text-right">Expectancy</th><th class="p-md text-right">Total R</th></tr></thead><tbody class="divide-y divide-outline-variant/20" id="btBody"></tbody></table>
+  </div>
+</section>
+
+<!-- ── PORTFOLIO ──────────────────────────────────────────────────── -->
+<section id="port" class="hidden">
+  <div class="grid grid-cols-3 gap-md mb-md">
+    <div class="bg-surface-container-lowest p-md rounded-xl border border-outline-variant/40"><p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Cash Available</p><p class="font-headline-md text-headline-md font-bold">$48,420.18</p></div>
+    <div class="bg-surface-container-lowest p-md rounded-xl border border-outline-variant/40"><p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Open Positions</p><p class="font-headline-md text-headline-md font-bold">3</p></div>
+    <div class="bg-surface-container-lowest p-md rounded-xl border border-outline-variant/40"><p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Daily P&amp;L</p><p class="font-headline-md text-headline-md font-bold text-gain">+$340.25</p></div>
+  </div>
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden mb-md">
+    <div class="p-md border-b border-outline-variant"><h4 class="font-label-md text-label-md uppercase tracking-widest">Recent Trades (15)</h4></div>
+    <table class="w-full text-left"><thead class="bg-surface-container-low text-[10px] uppercase text-on-surface-variant tracking-widest"><tr><th class="p-md">When</th><th class="p-md">Symbol</th><th class="p-md">Strategy</th><th class="p-md">Side</th><th class="p-md text-right">Entry</th><th class="p-md text-right">Exit</th><th class="p-md text-right">P&amp;L</th></tr></thead><tbody class="divide-y divide-outline-variant/20">
+      <tr><td class="p-md text-label-sm">14:18:22</td><td class="p-md font-bold">QQQ</td><td class="p-md text-label-sm text-on-surface-variant">QQQ_5m_orb30</td><td class="p-md text-gain font-bold text-label-sm">LONG</td><td class="p-md text-right font-data-mono">442.15</td><td class="p-md text-right font-data-mono">444.85</td><td class="p-md text-right font-data-mono text-gain font-bold">+$216.00</td></tr>
+      <tr><td class="p-md text-label-sm">13:42:01</td><td class="p-md font-bold">SPY</td><td class="p-md text-label-sm text-on-surface-variant">SPY_15m_breakout</td><td class="p-md text-gain font-bold text-label-sm">LONG</td><td class="p-md text-right font-data-mono">519.80</td><td class="p-md text-right font-data-mono">522.40</td><td class="p-md text-right font-data-mono text-gain font-bold">+$312.00</td></tr>
+      <tr><td class="p-md text-label-sm">12:15:30</td><td class="p-md font-bold">GLD</td><td class="p-md text-label-sm text-on-surface-variant">GLD_15m_connors</td><td class="p-md text-loss font-bold text-label-sm">SHORT</td><td class="p-md text-right font-data-mono">198.90</td><td class="p-md text-right font-data-mono">199.55</td><td class="p-md text-right font-data-mono text-loss font-bold">-$97.50</td></tr>
+      <tr><td class="p-md text-label-sm">10:50:14</td><td class="p-md font-bold">QQQ</td><td class="p-md text-label-sm text-on-surface-variant">QQQ_15m_connors</td><td class="p-md text-gain font-bold text-label-sm">LONG</td><td class="p-md text-right font-data-mono">438.40</td><td class="p-md text-right font-data-mono">441.20</td><td class="p-md text-right font-data-mono text-gain font-bold">+$224.00</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ── ANALYTICS ──────────────────────────────────────────────────── -->
+<section id="anal" class="hidden">
+  <div class="grid grid-cols-12 gap-md mb-md">
+    <div class="col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+      <div class="flex justify-between mb-sm"><h3 class="font-headline-md text-headline-md">Equity Curve</h3><p class="font-data-mono text-data-mono font-bold text-gain">+$2,148.50</p></div>
+      <p class="font-label-sm text-label-sm text-on-surface-variant mb-md">Cumulative P&amp;L from closed trades · last 30 days</p>
+      <svg viewBox="0 0 1000 280" class="w-full" style="max-height:280px"><path d="M0,240 L80,220 L160,200 L240,210 L320,180 L400,160 L480,140 L560,120 L640,100 L720,110 L800,80 L880,60 L1000,40" fill="none" stroke="#000" stroke-width="2"/><line x1="0" x2="1000" y1="140" y2="140" stroke="#c6c6cd" stroke-dasharray="2,4"/></svg>
+    </div>
+    <div class="col-span-4 bg-primary text-on-primary rounded-xl p-md">
+      <p class="font-label-sm text-label-sm opacity-70 uppercase tracking-widest mb-md">Session Totals</p>
+      <div class="space-y-md"><div><p class="opacity-60">Closed Trades</p><p class="font-headline-md text-headline-md font-bold">47</p></div><div><p class="opacity-60">Net P&amp;L</p><p class="font-headline-md text-headline-md font-bold text-tertiary-fixed">+$2,148.50</p></div></div>
+    </div>
+  </div>
+  <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+    <div class="p-md border-b border-outline-variant"><h4 class="font-label-md text-label-md uppercase tracking-widest">Per-Strategy Performance</h4></div>
+    <table class="w-full text-left"><thead class="bg-surface-container-low text-[10px] uppercase text-on-surface-variant tracking-widest"><tr><th class="p-md">Strategy</th><th class="p-md text-right">Trades</th><th class="p-md text-right">Wins</th><th class="p-md text-right">Win Rate</th><th class="p-md text-right">P&amp;L</th></tr></thead><tbody class="divide-y divide-outline-variant/20">
+      <tr><td class="p-md font-bold">SPY_5m_orb30</td><td class="p-md text-right font-data-mono">12</td><td class="p-md text-right font-data-mono">7</td><td class="p-md text-right font-data-mono">58.3%</td><td class="p-md text-right font-data-mono text-gain font-bold">+$842.40</td></tr>
+      <tr><td class="p-md font-bold">QQQ_5m_orb30</td><td class="p-md text-right font-data-mono">11</td><td class="p-md text-right font-data-mono">6</td><td class="p-md text-right font-data-mono">54.5%</td><td class="p-md text-right font-data-mono text-gain font-bold">+$610.20</td></tr>
+      <tr><td class="p-md font-bold">QQQ_15m_connors</td><td class="p-md text-right font-data-mono">14</td><td class="p-md text-right font-data-mono">5</td><td class="p-md text-right font-data-mono">35.7%</td><td class="p-md text-right font-data-mono text-gain font-bold">+$418.10</td></tr>
+      <tr><td class="p-md font-bold">SPY_15m_breakout</td><td class="p-md text-right font-data-mono">5</td><td class="p-md text-right font-data-mono">3</td><td class="p-md text-right font-data-mono">60.0%</td><td class="p-md text-right font-data-mono text-gain font-bold">+$280.80</td></tr>
+      <tr><td class="p-md font-bold">GLD_15m_connors</td><td class="p-md text-right font-data-mono">5</td><td class="p-md text-right font-data-mono">2</td><td class="p-md text-right font-data-mono">40.0%</td><td class="p-md text-right font-data-mono text-loss font-bold">-$3.00</td></tr>
+    </tbody></table>
+  </div>
+</section>
+
+<!-- ── TERMINAL ───────────────────────────────────────────────────── -->
+<section id="term" class="hidden">
+  <div class="grid grid-cols-12 gap-md">
+    <div class="col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+      <h3 class="font-headline-md text-headline-md mb-md">Manual Override</h3>
+      <p class="text-on-surface-variant mb-md">Manual entries bypass strategy logic but respect the global session window and risk caps.</p>
+      <div class="grid grid-cols-2 gap-md">
+        <div><label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">Symbol</label><input value="SPY" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/></div>
+        <div><label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">Side</label><select class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm"><option>Long</option><option>Short</option></select></div>
+        <div><label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">Shares</label><input type="number" value="10" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/></div>
+        <div><label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">Stop ($ from entry)</label><input type="number" value="1.00" step="0.01" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/></div>
+      </div>
+      <button class="w-full mt-md py-md bg-primary text-on-primary rounded-xl font-bold hover:opacity-90">Submit Order</button>
+    </div>
+    <div class="col-span-4 bg-error/5 border border-error/30 rounded-xl p-md">
+      <h3 class="font-headline-md text-headline-md text-error mb-md">Emergency Controls</h3>
+      <button class="w-full py-md bg-error text-on-error rounded-xl font-bold mb-sm hover:opacity-90">🛑 Halt All Strategies</button>
+      <button class="w-full py-md border border-outline rounded-xl font-bold hover:bg-surface-container-low">Clear Halt</button>
+      <p class="mt-md font-label-sm text-label-sm text-on-surface-variant">The halt command is written to commands.json; orchestrator reads it ≤5s.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── SETTINGS ───────────────────────────────────────────────────── -->
+<section id="set" class="hidden">
+  <div class="space-y-md">
+    <section class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+      <h3 class="font-headline-md text-headline-md mb-xs">Trading Window (ET)</h3>
+      <p class="text-on-surface-variant mb-md">Global gate applied to every strategy. Entries only inside this window; positions force-flat at EOD.</p>
+      <div class="grid grid-cols-3 gap-md">
+        <div><label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">Entry Start</label><input type="number" step="0.5" value="9.5" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/><p class="font-label-sm text-label-sm text-on-surface-variant mt-xs">9.5 = 9:30 AM ET</p></div>
+        <div><label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">Entry End</label><input type="number" step="0.5" value="13.0" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/><p class="font-label-sm text-label-sm text-on-surface-variant mt-xs">13.0 = 1:00 PM ET</p></div>
+        <div><label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">EOD Flat</label><input type="number" step="0.5" value="16.0" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/><p class="font-label-sm text-label-sm text-on-surface-variant mt-xs">16.0 = 4:00 PM ET</p></div>
+      </div>
+    </section>
+    <section class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+      <h3 class="font-headline-md text-headline-md mb-xs">Risk</h3>
+      <div class="grid grid-cols-2 gap-md">
+        <div><label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">Risk per Trade ($)</label><input type="number" value="250" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/></div>
+        <div><label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">Max Daily Loss ($)</label><input type="number" value="1500" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/></div>
+      </div>
+    </section>
+    <section class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+      <h3 class="font-headline-md text-headline-md mb-xs">Broker</h3>
+      <select class="w-64 bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm"><option>Sandbox (paper)</option><option>Live (real money)</option></select>
+      <p class="mt-sm font-label-sm text-label-sm text-on-surface-variant">Paper trading — safe.</p>
+    </section>
+    <button class="px-md py-sm bg-primary text-on-primary rounded-lg font-bold">Save Settings</button>
+  </div>
+</section>
+
+</main>
+
+<script>
+const TABS = {
+  dash:  {label: "Command Center"},
+  strat: {label: "Strategy Registry"},
+  sig:   {label: "Signal Scanner"},
+  bt:    {label: "Backtest Results"},
+  port:  {label: "Portfolio & Positions"},
+  anal:  {label: "Performance Analytics"},
+  term:  {label: "Manual Terminal"},
+  set:   {label: "System Settings"},
+};
+
+function show(id) {
+  Object.keys(TABS).forEach(k => {
+    document.getElementById(k).classList.toggle("hidden", k !== id);
+  });
+  document.getElementById("pageTitle").textContent = TABS[id].label;
+  document.querySelectorAll("aside nav a").forEach(a => {
+    const active = a.dataset.tab === id;
+    a.className = "flex items-center gap-sm px-sm py-base rounded-lg transition-colors " + (active
+      ? "bg-primary text-on-primary font-bold"
+      : "text-on-surface-variant hover:bg-secondary-container");
+  });
+}
+window.show = show;
+
+// Populate strategies table
+const STRATS = [
+  ["SPY_5m_orb30", "OpeningRangeBreakout", "SPY", "5m", true, 409, "44.5%", "+46.00 R"],
+  ["QQQ_5m_orb30", "OpeningRangeBreakout", "QQQ", "5m", true, 376, "45.5%", "+51.50 R"],
+  ["GLD_5m_orb30", "OpeningRangeBreakout", "GLD", "5m", true, 414, "44.0%", "+41.00 R"],
+  ["SPY_15m_connors", "ConnorsRSI2", "SPY", "15m", true, 356, "37.1%", "+40.00 R"],
+  ["QQQ_15m_connors", "ConnorsRSI2", "QQQ", "15m", true, 359, "34.8%", "+16.00 R"],
+  ["GLD_15m_connors", "ConnorsRSI2", "GLD", "15m", true, 340, "38.2%", "+50.00 R"],
+  ["SPY_15m_breakout", "RegimeBreakout", "SPY", "15m", true, 138, "57.3%", "+45.11 R"],
+  ["QQQ_15m_breakout", "RegimeBreakout", "QQQ", "15m", true, 142, "54.7%", "+34.87 R"],
+  ["GLD_5m_breakout",  "RegimeBreakout", "GLD",  "5m",  true, 211, "59.7%", "+40.93 R"],
+  ["QQQ_1h_bbsqueeze", "BBSqueeze", "QQQ", "1h", true, 42, "64.3%", "+5.25 R"],
+  ["SPY_1h_bbsqueeze", "BBSqueeze", "SPY", "1h", false, 51, "54.9%", "-2.00 R"],
+  ["QQQ_15m_5bar_pb",  "FiveBarPullback", "QQQ", "15m", true, 25, "60.0%", "+1.25 R"],
+  ["GLD_4h_macd200",   "MACDTrendStack",  "GLD", "4h", true, 3, "66.7%", "+3.00 R"],
+  ["GLD_5m_ifvg",      "InverseFVG", "GLD", "5m", false, 772, "41.8%", "-18.33 R"],
+  ["QQQ_5m_ifvg",      "InverseFVG", "QQQ", "5m", false, 1161, "41.7%", "-31.67 R"],
+  ["GLD_5m_bj4",       "BigJohnson", "GLD", "5m", false, 325, "40.6%", "-17.00 R"],
+  ["QQQ_5m_bj4",       "BigJohnson", "QQQ", "5m", false, 310, "41.3%", "-11.33 R"],
+  ["QQQ_5m_nearys",    "NearysIFVG", "QQQ", "5m", false, 651, "41.2%", "-25.67 R"],
+  ["GLD_5m_nearys",    "NearysIFVG", "GLD", "5m", true, 714, "43.3%", "+7.00 R"],
+  ["QQQ_5m_ictfvg_ny", "ICTFVGSessionTap", "QQQ", "5m", false, 426, "18.5%", "-31.00 R"],
+];
+document.getElementById("stratBody").innerHTML = STRATS.map(r => {
+  const totalR = parseFloat(r[7]);
+  const cls = totalR > 0 ? "text-gain font-bold" : "text-loss font-bold";
+  return `<tr class="hover:bg-surface-container-low">
+    <td class="p-md"><p class="font-bold">${r[0]}</p><p class="font-label-sm text-label-sm text-on-surface-variant">${r[1]}</p></td>
+    <td class="p-md font-data-mono font-bold">${r[2]}</td>
+    <td class="p-md font-data-mono">${r[3]}</td>
+    <td class="p-md">
+      <label class="inline-flex items-center cursor-pointer">
+        <input type="checkbox" ${r[4]?"checked":""} class="sr-only peer"/>
+        <div class="w-9 h-5 bg-outline-variant peer-checked:bg-primary rounded-full relative">
+          <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+        </div>
+      </label>
+    </td>
+    <td class="p-md text-right font-data-mono">${r[5]}</td>
+    <td class="p-md text-right font-data-mono">${r[6]}</td>
+    <td class="p-md text-right font-data-mono ${cls}">${r[7]}</td>
+  </tr>`;
+}).join("");
+document.getElementById("btBody").innerHTML = STRATS.slice(0, 12).map(r => {
+  const totalR = parseFloat(r[7]);
+  const cls = totalR > 0 ? "text-gain font-bold" : "text-loss font-bold";
+  return `<tr class="hover:bg-surface-container-low">
+    <td class="p-md font-bold">${r[1]}</td>
+    <td class="p-md font-data-mono">${r[2]}</td>
+    <td class="p-md font-data-mono">${r[3]}</td>
+    <td class="p-md text-right font-data-mono">${r[5]}</td>
+    <td class="p-md text-right font-data-mono">${r[6]}</td>
+    <td class="p-md text-right font-data-mono">${(totalR/parseInt(r[5])).toFixed(3)}</td>
+    <td class="p-md text-right font-data-mono ${cls}">${r[7]}</td>
+  </tr>`;
+}).join("");
+</script>
+</body></html>

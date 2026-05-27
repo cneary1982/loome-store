@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>Backtest · Loomi.AI</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="_tailwind.js"></script>
+<style>body{background:#f9f9f9;color:#1a1c1c;font-family:Inter,sans-serif}.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400}</style>
+</head>
+<body>
+<main id="main" class="ml-64 p-margin max-w-7xl"></main>
+<script src="_layout.js"></script>
+<script>
+  renderLayout({ active: "Backtest", title: "Backtest Results" });
+
+  const tab = location.hash.slice(1) || "summary";
+
+  async function refresh() {
+    const r = await (await fetch("/api/backtests")).json();
+    const tabs = [
+      { key: "summary",   label: "Library Summary",   rows: r.summary || [] },
+      { key: "sweep_etf", label: "Best ETF per Cell", rows: r.sweep_etf || [] },
+      { key: "sweep_all", label: "Best Futures per Cell", rows: r.sweep_all || [] },
+    ];
+
+    document.getElementById("main").innerHTML = `
+      <div class="flex gap-sm mb-md border-b border-outline-variant">
+        ${tabs.map(t => `
+          <a href="#${t.key}"
+             class="px-md py-sm font-label-md text-label-md ${t.key === tab
+               ? "border-b-2 border-primary text-primary font-bold"
+               : "text-on-surface-variant hover:text-primary"}">
+            ${t.label}
+          </a>`).join("")}
+      </div>
+
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+        ${renderTable(tabs.find(t => t.key === tab).rows)}
+      </div>
+    `;
+  }
+
+  function renderTable(rows) {
+    if (!rows.length) return `<div class="p-md text-on-surface-variant italic">No data yet — run a backtest first.</div>`;
+    const cols = Object.keys(rows[0]);
+    const num  = c => ["trades","win_rate","expectancy","total_R","lookback","threshold","atr_mult"].includes(c);
+    return `
+      <table class="w-full text-left">
+        <thead class="bg-surface-container-low">
+          <tr class="text-on-surface-variant text-[10px] uppercase tracking-widest">
+            ${cols.map(c => `<th class="p-md ${num(c) ? "text-right" : ""}">${c}</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-outline-variant/20">
+          ${rows.map(r => `
+            <tr class="hover:bg-surface-container-low transition-colors">
+              ${cols.map(c => {
+                const v = r[c];
+                const isProfit = c === "total_R" && +v > 0;
+                const isLoss   = c === "total_R" && +v < 0;
+                const cls = isProfit ? "text-gain font-bold" : isLoss ? "text-loss font-bold" : "";
+                return `<td class="p-md ${num(c) ? "text-right font-data-mono" : ""} ${cls}">${v ?? "—"}</td>`;
+              }).join("")}
+            </tr>`).join("")}
+        </tbody>
+      </table>`;
+  }
+
+  refresh();
+  window.addEventListener("hashchange", refresh);
+</script>
+</body></html>

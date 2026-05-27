@@ -1,0 +1,13 @@
+symbol,timeframe,lookback,threshold,atr_mult,trend_filter,session_window,trades,win_rate,expectancy,total_R
+GLD,15m,48,0.01,2.0,on,all_hours,211,59.7,0.194,40.93
+GLD,1d,12,0.02,2.0,off,all_hours,25,68.0,0.36,9.0
+GLD,1h,32,0.01,2.0,off,all_hours,157,59.2,0.185,29.04
+GLD,4h,12,0.015,3.0,off,all_hours,58,60.3,0.207,12.01
+QQQ,15m,20,0.01,3.0,off,all_hours,371,54.7,0.094,34.87
+QQQ,1d,12,0.01,2.0,off,all_hours,22,72.7,0.455,10.01
+QQQ,1h,12,0.015,2.0,off,all_hours,167,58.7,0.174,29.06
+QQQ,4h,48,0.01,2.0,off,all_hours,59,66.1,0.322,19.0
+SPY,15m,48,0.01,2.5,off,all_hours,309,57.3,0.146,45.11
+SPY,1d,32,0.03,2.0,off,all_hours,14,71.4,0.429,6.01
+SPY,1h,32,0.01,2.0,off,all_hours,189,57.7,0.153,28.92
+SPY,4h,20,0.01,2.0,off,all_hours,79,57.0,0.139,10.98
