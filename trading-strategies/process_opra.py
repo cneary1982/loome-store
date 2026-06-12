@@ -258,6 +258,31 @@ def main():
     ap.print_help()
 
 
+def derive_spot_from_parity(df: pd.DataFrame) -> float | None:
+    """Estimate spot from put-call parity at the nearest 21–45 day expiry.
+
+    For each strike with both a call and put close: spot ≈ K + (C - P).
+    Median across strikes. Ignores the small dividend/rate term — fine for
+    30-day-out options on QQQ.
+    """
+    df = df.dropna(subset=["close"]).copy()
+    df["T_days"] = (pd.to_datetime(df["expiry"]) - pd.to_datetime(df["date"])).dt.days
+    front = df[(df["T_days"] >= 21) & (df["T_days"] <= 45)]
+    if front.empty:
+        front = df[df["T_days"] >= 7]
+    if front.empty:
+        return None
+    exp = front["expiry"].value_counts().index[0]
+    sub = front[front["expiry"] == exp]
+    calls = sub[sub["opt_type"] == "C"].set_index("strike")["close"]
+    puts  = sub[sub["opt_type"] == "P"].set_index("strike")["close"]
+    common = calls.index.intersection(puts.index)
+    if len(common) < 3:
+        return None
+    spots = common + (calls[common] - puts[common])
+    return float(spots.median())
+
+
 def run_one(client, d: date, spot: float | None, skip_existing: bool,
             local_out: Path | None):
     out_proc_name = f"{DST_PREFIX}/processed/{d.isoformat()}.parquet"
@@ -267,23 +292,26 @@ def run_one(client, d: date, spot: float | None, skip_existing: bool,
         out_proc_path = local_out / "processed" / f"{d.isoformat()}.parquet"
         out_gex_path  = local_out / "gex_dex"   / f"{d.isoformat()}.parquet"
         if skip_existing and out_proc_path.exists():
-            return
-    elif skip_existing and client.bucket(DST_BUCKET).blob(out_proc_name).exists():
-        return
-
-    proc = process_day(client, d)
-    if proc is None:
-        return
-
-    if local_out:
-        proc.to_parquet(out_proc_path, index=False, compression="snappy")
+            # Still try GEX/DEX if processed exists but gex_dex doesn't
+            if out_gex_path.exists():
+                return
+            proc = pd.read_parquet(out_proc_path)
+        else:
+            proc = process_day(client, d)
+            if proc is None:
+                return
+            proc.to_parquet(out_proc_path, index=False, compression="snappy")
     else:
+        if skip_existing and client.bucket(DST_BUCKET).blob(out_proc_name).exists():
+            return
+        proc = process_day(client, d)
+        if proc is None:
+            return
         write_parquet_to_gcs(client, proc, DST_BUCKET, out_proc_name)
 
     if spot is None:
-        # Use median close as a placeholder spot until we wire in QQQ underlying
-        spot = float(proc["close"].dropna().median()) if "close" in proc else float("nan")
-    if math.isnan(spot) or spot <= 0:
+        spot = derive_spot_from_parity(proc)
+    if spot is None or math.isnan(spot) or spot <= 0:
         return
     gex = compute_gex_dex(proc, spot=spot)
 
