@@ -225,9 +225,14 @@ def main():
     ap.add_argument("--spot",     type=float, help="QQQ close that day (single-day mode)")
     ap.add_argument("--skip-existing", action="store_true",
                     help="Skip days whose processed parquet already exists")
+    ap.add_argument("--local-out", help="Write Parquet to this local dir instead of GCS")
     args = ap.parse_args()
 
     client = _client()
+    local_out = Path(args.local_out) if args.local_out else None
+    if local_out:
+        (local_out / "processed").mkdir(parents=True, exist_ok=True)
+        (local_out / "gex_dex").mkdir(parents=True, exist_ok=True)
 
     if args.list:
         for d in list_available_dates(client):
@@ -236,44 +241,56 @@ def main():
 
     if args.date:
         d = date.fromisoformat(args.date)
-        run_one(client, d, args.spot, args.skip_existing)
+        run_one(client, d, args.spot, args.skip_existing, local_out)
         return
 
     if args.all:
-        for d in list_available_dates(client):
+        dates = list_available_dates(client)
+        print(f"Found {len(dates)} dates to process")
+        for i, d in enumerate(dates, 1):
             try:
-                run_one(client, d, None, args.skip_existing)
+                run_one(client, d, None, args.skip_existing, local_out)
+                print(f"  [{i}/{len(dates)}] {d} done", flush=True)
             except Exception as e:
-                print(f"  {d}: FAILED {e!r}", file=sys.stderr)
+                print(f"  [{i}/{len(dates)}] {d}: FAILED {e!r}", file=sys.stderr, flush=True)
         return
 
     ap.print_help()
 
 
-def run_one(client, d: date, spot: float | None, skip_existing: bool):
-    out_proc = f"{DST_PREFIX}/processed/{d.isoformat()}.parquet"
-    out_gex  = f"{DST_PREFIX}/gex_dex/{d.isoformat()}.parquet"
-    if skip_existing and client.bucket(DST_BUCKET).blob(out_proc).exists():
-        print(f"  {d}: skip (already exists)")
+def run_one(client, d: date, spot: float | None, skip_existing: bool,
+            local_out: Path | None):
+    out_proc_name = f"{DST_PREFIX}/processed/{d.isoformat()}.parquet"
+    out_gex_name  = f"{DST_PREFIX}/gex_dex/{d.isoformat()}.parquet"
+
+    if local_out:
+        out_proc_path = local_out / "processed" / f"{d.isoformat()}.parquet"
+        out_gex_path  = local_out / "gex_dex"   / f"{d.isoformat()}.parquet"
+        if skip_existing and out_proc_path.exists():
+            return
+    elif skip_existing and client.bucket(DST_BUCKET).blob(out_proc_name).exists():
         return
-    print(f"  {d}: processing…")
+
     proc = process_day(client, d)
     if proc is None:
-        print(f"  {d}: no data")
         return
-    write_parquet_to_gcs(client, proc, DST_BUCKET, out_proc)
-    print(f"    wrote {len(proc):,} contracts → {out_proc}")
+
+    if local_out:
+        proc.to_parquet(out_proc_path, index=False, compression="snappy")
+    else:
+        write_parquet_to_gcs(client, proc, DST_BUCKET, out_proc_name)
 
     if spot is None:
-        # Use settle as a rough spot proxy — average of ATM strikes' midpoint.
-        # In production we'd pull QQQ close from our own 5m data.
-        spot = float(proc["settle"].dropna().median()) if "settle" in proc else float("nan")
+        # Use median close as a placeholder spot until we wire in QQQ underlying
+        spot = float(proc["close"].dropna().median()) if "close" in proc else float("nan")
     if math.isnan(spot) or spot <= 0:
-        print(f"    no spot price available — skipping GEX/DEX")
         return
     gex = compute_gex_dex(proc, spot=spot)
-    write_parquet_to_gcs(client, gex, DST_BUCKET, out_gex)
-    print(f"    wrote {len(gex):,} strikes → {out_gex}  (spot≈{spot:.2f})")
+
+    if local_out:
+        gex.to_parquet(out_gex_path, index=False, compression="snappy")
+    else:
+        write_parquet_to_gcs(client, gex, DST_BUCKET, out_gex_name)
 
 
 if __name__ == "__main__":
