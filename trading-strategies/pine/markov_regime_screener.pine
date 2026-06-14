@@ -1,0 +1,173 @@
+//@version=6
+// ============================================================
+// MARKOV REGIME — BIAS, SIZE & SCREENER
+// Version:  v1
+// Use:      (1) Bias + position sizing on a single chart
+//           (2) Pine Screener column to rank a watchlist by the
+//               odds of an UP day vs DOWN day vs SIDEWAYS/skip
+//
+// METHOD (ported 1:1 from our validated Python backtester):
+//   1. LABEL each bar's regime from the log-return over `lookback`
+//      bars:  up(2) if lr > +threshold, down(0) if lr < -threshold,
+//      else sideways(1).
+//   2. Build a 3x3 MARKOV TRANSITION MATRIX over the last `histLen`
+//      bars: counts[from][to], then normalize each row to
+//      probabilities.
+//   3. FORECAST next bar by reading the row for the CURRENT regime:
+//        P(up)   = T[current][2]
+//        P(side) = T[current][1]
+//        P(down) = T[current][0]
+//   4. BIAS SCORE = (P_up - P_down) * 100   →  +100 strong up odds,
+//      -100 strong down odds, ~0 = no directional edge.
+//   5. CONVICTION = max(P_up, P_down). If conviction < `convThresh`
+//      OR the dominant forecast is SIDEWAYS, the name is "skip".
+//   6. SIZE FACTOR scales 0..1 from convThresh..1 — feed it into
+//      your position sizing (e.g. shares = base_risk * size_factor).
+//
+// SCREENER USAGE (TradingView Pine Screener):
+//   - Add this indicator to the Pine Screener.
+//   - Sort by "Bias Score" descending: top names = best UP-day odds,
+//     bottom = best DOWN-day odds, middle (|score| small) = skip.
+//   - Filter "Tradeable" = 1 to drop sideways/low-conviction names.
+// ============================================================
+indicator("Markov Regime — Bias, Size & Screener", shorttitle="MARKOV BIAS",
+     overlay = false, max_bars_back = 5000)
+
+// ─── INPUTS ──────────────────────────────────────────────────
+grpR = "Regime Definition"
+lookback  = input.int(5, "Regime Lookback (bars)", minval=1, group=grpR,
+     tooltip="Bars used to measure the log-return that defines each bar's regime. 5 on a daily chart ≈ one trading week.")
+threshPct = input.float(0.5, "Regime Threshold (%)", minval=0.01, step=0.05, group=grpR,
+     tooltip="Log-return magnitude (in %) that flips the regime to up/down. Smaller = more up/down labels, fewer sideways.")
+histLen   = input.int(252, "Transition History (bars)", minval=20, maxval=2000, group=grpR,
+     tooltip="How many past bars build the Markov transition matrix. 252 ≈ one year of daily bars.")
+
+grpT = "Trade / Size"
+convThresh = input.float(0.45, "Min Conviction to Trade", minval=0.34, maxval=0.99, step=0.01, group=grpT,
+     tooltip="Minimum forecast probability (max of P_up,P_down) required to call a name 'tradeable'. Below this it's treated as sideways/skip. 0.34 = barely better than a coin-flip across 3 states.")
+maxRiskUnits = input.float(1.0, "Max Size Units", minval=0.1, step=0.1, group=grpT,
+     tooltip="Size at full conviction. The plotted Size Factor = this × scaled conviction.")
+
+grpV = "Visuals"
+showDash  = input.bool(true, "Show Dashboard", group=grpV)
+showBG    = input.bool(true, "Color Background by Forecast", group=grpV)
+dashPos   = input.string("Top Right", "Dashboard Position", group=grpV,
+     options=["Top Right","Top Left","Bottom Right","Bottom Left"])
+
+threshold = threshPct / 100.0
+
+// ─── REGIME LABEL (matches Python label()) ───────────────────
+regimeAt(int barsAgo) =>
+    lr = math.log(close[barsAgo] / close[barsAgo + lookback])
+    lr > threshold ? 2 : lr < -threshold ? 0 : 1
+
+curRegime = regimeAt(0)
+
+// ─── TRANSITION MATRIX over last histLen bars ────────────────
+// counts[from][to] for transitions label[i+1] -> label[i]
+// (i+1 is the older bar, i is the newer bar — same direction as
+//  Python's labels[i] -> labels[i+1] walked forward in time)
+var matrix<float> counts = matrix.new<float>(3, 3, 0.0)
+
+float pUp   = na
+float pSide = na
+float pDown = na
+
+if bar_index > histLen + lookback + 1
+    // Rebuild the matrix each bar (rolling window).
+    counts.fill(0.0)
+    for i = 0 to histLen - 1
+        from = regimeAt(i + 1)
+        to   = regimeAt(i)
+        counts.set(from, to, counts.get(from, to) + 1.0)
+
+    rowSum = counts.get(curRegime, 0) + counts.get(curRegime, 1) + counts.get(curRegime, 2)
+    if rowSum > 0
+        pDown := counts.get(curRegime, 0) / rowSum
+        pSide := counts.get(curRegime, 1) / rowSum
+        pUp   := counts.get(curRegime, 2) / rowSum
+    else
+        pDown := 1.0/3.0
+        pSide := 1.0/3.0
+        pUp   := 1.0/3.0
+
+// ─── BIAS, CONVICTION, FORECAST, SIZE ────────────────────────
+biasScore  = na(pUp) ? na : (pUp - pDown) * 100.0
+conviction = na(pUp) ? na : math.max(pUp, pDown)
+
+// Forecast state: 2=UP, 1=SIDE, 0=DOWN
+forecast = na(pUp) ? na :
+     (pUp >= pDown and pUp >= pSide) ? 2 :
+     (pDown >= pUp and pDown >= pSide) ? 0 : 1
+
+tradeable = not na(conviction) and conviction >= convThresh and forecast != 1
+sizeFactor = tradeable ? maxRiskUnits * math.min(1.0, (conviction - convThresh) / (1.0 - convThresh)) : 0.0
+sideProb = na(pSide) ? na : pSide
+
+// ─── PLOTS (these are what the Pine Screener reads) ──────────
+plot(biasScore,          "Bias Score",   color=color.new(color.blue, 0))
+plot(conviction * 100.0, "Conviction %", color=color.new(color.gray, 100), display=display.data_window)
+plot(pUp   * 100.0,      "P(Up) %",      color=color.new(color.green, 100), display=display.data_window)
+plot(pDown * 100.0,      "P(Down) %",    color=color.new(color.red, 100),   display=display.data_window)
+plot(sideProb * 100.0,   "P(Side) %",    color=color.new(color.orange, 100),display=display.data_window)
+plot(sizeFactor,         "Size Factor",  color=color.new(color.purple, 100),display=display.data_window)
+plot(tradeable ? 1 : 0,  "Tradeable",    color=color.new(color.white, 100), display=display.data_window)
+plot(forecast,           "Forecast 0D/1S/2U", color=color.new(color.white, 100), display=display.data_window)
+
+hline(0,  "Zero", color=color.new(color.gray, 50), linestyle=hline.style_dashed)
+hline(20, "Up edge",   color=color.new(color.green, 70), linestyle=hline.style_dotted)
+hline(-20,"Down edge", color=color.new(color.red, 70),   linestyle=hline.style_dotted)
+
+// Color the bias histogram by forecast
+biasCol = forecast == 2 ? color.new(#00E676, 20) :
+          forecast == 0 ? color.new(#FF1744, 20) :
+          color.new(#B0BEC5, 40)
+plot(biasScore, "Bias Histogram", color=biasCol, style=plot.style_columns)
+
+// Background by forecast (chart-pane only via bgcolor)
+bgcolor(showBG and forecast == 2 ? color.new(#00E676, 92) :
+        showBG and forecast == 0 ? color.new(#FF1744, 92) :
+        showBG and forecast == 1 ? color.new(#FFB300, 95) : na)
+
+// ─── DASHBOARD ───────────────────────────────────────────────
+var table dash = na
+if showDash and barstate.islast
+    pos = dashPos == "Top Right"    ? position.top_right :
+          dashPos == "Top Left"     ? position.top_left :
+          dashPos == "Bottom Right" ? position.bottom_right : position.bottom_left
+    dash := table.new(pos, 2, 8, bgcolor=#0D0D1A, border_color=#1E2A3A, border_width=1, frame_color=#1E2A3A, frame_width=2)
+
+    fcastTxt = forecast == 2 ? "▲ UP DAY" : forecast == 0 ? "▼ DOWN DAY" : "— SIDEWAYS"
+    fcastCol = forecast == 2 ? #00E676 : forecast == 0 ? #FF1744 : #FFB300
+    regTxt   = curRegime == 2 ? "UP" : curRegime == 0 ? "DOWN" : "SIDE"
+
+    table.cell(dash, 0, 0, "  ◈  MARKOV REGIME  ◈  ", text_color=#00C2FF, text_size=size.small, bgcolor=#0A1628)
+    table.merge_cells(dash, 0, 0, 1, 0)
+
+    table.cell(dash, 0, 1, "  Current Regime", text_color=#B0BEC5, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 1, regTxt, text_color=#FFFFFF, text_size=size.small, text_halign=text.align_center)
+
+    table.cell(dash, 0, 2, "  Forecast (next)", text_color=#B0BEC5, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 2, fcastTxt, text_color=fcastCol, text_size=size.normal, text_halign=text.align_center)
+
+    table.cell(dash, 0, 3, "  P(Up)", text_color=#B0BEC5, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 3, na(pUp) ? "—" : str.tostring(pUp*100, "#.#") + "%", text_color=#00E676, text_size=size.small, text_halign=text.align_center)
+
+    table.cell(dash, 0, 4, "  P(Side)", text_color=#B0BEC5, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 4, na(pSide) ? "—" : str.tostring(pSide*100, "#.#") + "%", text_color=#FFB300, text_size=size.small, text_halign=text.align_center)
+
+    table.cell(dash, 0, 5, "  P(Down)", text_color=#B0BEC5, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 5, na(pDown) ? "—" : str.tostring(pDown*100, "#.#") + "%", text_color=#FF1744, text_size=size.small, text_halign=text.align_center)
+
+    table.cell(dash, 0, 6, "  Bias Score", text_color=#B0BEC5, text_size=size.small, text_halign=text.align_left)
+    table.cell(dash, 1, 6, na(biasScore) ? "—" : str.tostring(biasScore, "+#.#"), text_color=fcastCol, text_size=size.small, text_halign=text.align_center)
+
+    table.cell(dash, 0, 7, "  Size Factor", text_color=#B0BEC5, text_size=size.small, text_halign=text.align_left)
+    sizeTxt = tradeable ? str.tostring(sizeFactor, "#.##") + "x" : "SKIP"
+    sizeCol = tradeable ? #00C2FF : #607D8B
+    table.cell(dash, 1, 7, sizeTxt, text_color=sizeCol, text_size=size.small, text_halign=text.align_center)
+
+// ─── ALERTS ──────────────────────────────────────────────────
+alertcondition(forecast == 2 and forecast[1] != 2, "Flip to UP forecast", "Markov regime forecast flipped to UP")
+alertcondition(forecast == 0 and forecast[1] != 0, "Flip to DOWN forecast", "Markov regime forecast flipped to DOWN")
+alertcondition(tradeable and not tradeable[1], "Became tradeable", "Markov conviction crossed trade threshold")
