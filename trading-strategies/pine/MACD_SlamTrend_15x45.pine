@@ -1,0 +1,268 @@
+//@version=6
+// S18 - THE SLAM [v4 Loomi]
+// T1=Loomi TC flip timer, T2=15m MACD zone, T3=60m MACD zone
+// Optimal NQ defaults: sens=1, t1_window=3, macd_sens=2, T3=60m, flip_exit, no ATR trail
+strategy("S18 - The Slam [v4 Loomi]", "SLAM-v4", overlay = true,
+     default_qty_type        = strategy.percent_of_equity,
+     default_qty_value       = 10,
+     commission_type         = strategy.commission.percent,
+     commission_value        = 0.10,
+     slippage                = 1,
+     calc_on_every_tick      = false,
+     process_orders_on_close = false,
+     pyramiding              = 0,
+     max_labels_count        = 200)
+
+// === LOOMI TREND CATCHER ===
+sens     = input.int(1, "Sensitivity", minval = 1, maxval = 5, tooltip = "1=fastest, 5=slowest")
+src      = input.source(close, "Source")
+atrMult  = input.float(1.5, "Cloud Width (ATR x)", step = 0.1)
+maxDev   = input.float(3.0, "Max Band Distance (ATR x)", step = 0.1)
+colUp    = input.color(color.new(#00d4aa, 0), "Up Color")
+colDn    = input.color(color.new(#ff6b35, 0), "Down Color")
+
+len = switch sens
+    1 => 8
+    2 => 13
+    3 => 21
+    4 => 34
+    5 => 55
+
+mid    = ta.hma(src, len)
+atr    = ta.atr(len)
+up     = math.min(mid + atr * atrMult, close + atr * maxDev)
+dn     = math.max(mid - atr * atrMult, close - atr * maxDev)
+
+var int trend = 1
+trend := close > up[1] ? 1 : close < dn[1] ? -1 : trend
+
+var float lockUp = na
+var float lockDn = na
+lockUp := trend == -1 ? math.min(up, nz(lockUp[1], up)) : up
+lockDn := trend ==  1 ? math.max(dn, nz(lockDn[1], dn)) : dn
+
+flipUp = trend == 1  and trend[1] == -1
+flipDn = trend == -1 and trend[1] ==  1
+
+// === CONFLUENCE ===
+debug_bypass = input.bool(false, "Debug: T1 only (skip T2+T3)", group = "Confluence (MTF)", tooltip = "Enable to test T1 alone — bypasses all MTF filters")
+require_t2   = input.bool(true,  "T2: 15m MACD zone",     group = "Confluence (MTF)")
+t2_tf        = input.timeframe("15", "T2 Timeframe",       group = "Confluence (MTF)")
+require_t3   = input.bool(true,  "T3: 60m MACD zone",     group = "Confluence (MTF)")
+t3_tf        = input.timeframe("60", "T3 Timeframe",       group = "Confluence (MTF)")
+t1_window    = input.int(3,  "T1 Flip Window (bars)", group = "Confluence (MTF)", tooltip = "Bars after Loomi flip to allow entry. 3 bars = 15 min on 5m.")
+macd_sens    = input.int(2,  "MACD Sensitivity (1-5)", minval = 1, maxval = 5, group = "Confluence (MTF)", tooltip = "1=5/13/5  2=8/17/9  3=12/26/9  4=19/39/9  5=26/52/9")
+
+macd_fast = macd_sens == 1 ? 5  : macd_sens == 2 ? 8  : macd_sens == 3 ? 12 : macd_sens == 4 ? 19 : 26
+macd_slow = macd_sens == 1 ? 13 : macd_sens == 2 ? 17 : macd_sens == 3 ? 26 : macd_sens == 4 ? 39 : 52
+macd_sig  = macd_sens == 1 ? 5  : macd_sens == 2 ? 9  : macd_sens == 3 ? 9  : macd_sens == 4 ? 9  : 9
+
+// T2: 15m MACD zone (line above/below signal — no cross event required)
+[t2_line, t2_sig_v, _] = request.security(syminfo.tickerid, t2_tf, ta.macd(close, macd_fast, macd_slow, macd_sig))
+t2_bull = t2_line > t2_sig_v
+t2_bear = t2_line < t2_sig_v
+
+// T3: 60m MACD zone (regime filter)
+[t3_line, t3_sig_v, _] = request.security(syminfo.tickerid, t3_tf, ta.macd(close, macd_fast, macd_slow, macd_sig))
+t3_bull = t3_line > t3_sig_v
+t3_bear = t3_line < t3_sig_v
+
+// === SESSION ===
+use_entry_window = input.bool(true,  "Restrict entries to window", group = "Session")
+entry_session    = input.session("0800-1230", "Entry Window NY",    group = "Session")
+use_kill_time    = input.bool(true,  "Force flat at kill time",     group = "Session")
+kill_session     = input.session("0800-1600", "Kill Session NY",    group = "Session")
+one_per_bar      = input.bool(true,  "Max 1 entry per bar",         group = "Session")
+
+in_entry_window = use_entry_window ? not na(time(timeframe.period, entry_session, "America/New_York")) : true
+in_kill_window  = use_kill_time    ? not na(time(timeframe.period, kill_session,  "America/New_York")) : true
+kill_now = use_kill_time and (not in_kill_window) and in_kill_window[1]
+
+// === RISK ===
+allow_short = input.bool(true,   "Allow Shorts",                             group = "Risk")
+stop_atr    = input.float(2.0,   "Hard Stop x ATR(14)", minval=0.1, step=0.1, group = "Risk")
+exit_mode   = input.string("combo", "Target Mode", options=["none","points","atr","combo"], group = "Risk")
+target_pts  = input.float(100.0, "Fixed Target (points)", minval=0.0, step=1.0, group = "Risk")
+target_atr  = input.float(3.0,   "Target x ATR(14)",   minval=0.1, step=0.1,   group = "Risk")
+flip_exit   = input.bool(true,   "Close on opposite Loomi flip",              group = "Risk")
+
+// === TRAIL ===
+use_trail       = input.bool(false, "Enable ATR Trail",               group = "Trail")
+trail_mult      = input.float(0.75, "Trail x ATR(14)", minval=0.1, step=0.05, group = "Trail")
+trail_after_atr = input.float(1.0,  "Activate after N x ATR profit", minval=0.0, step=0.1, group = "Trail")
+
+qty_str = input.string("1", "Quantity in JSON", group = "Alerts")
+
+// === ENTRY SIGNALS ===
+atr14 = ta.atr(14)
+
+var int last_entry_bar = -1
+fresh_bar   = (not one_per_bar) or bar_index != last_entry_bar
+
+// T1 flip timer: opens a window after Loomi flips, waiting for T2+T3 to align
+var int t1_up_timer = 0
+var int t1_dn_timer = 0
+t1_up_timer := flipUp ? t1_window : math.max(0, t1_up_timer - 1)
+t1_dn_timer := flipDn ? t1_window : math.max(0, t1_dn_timer - 1)
+
+t1_long_ok  = debug_bypass or t1_up_timer > 0
+t1_short_ok = debug_bypass or t1_dn_timer > 0
+t2_long_ok  = debug_bypass or (not require_t2) or t2_bull
+t2_short_ok = debug_bypass or (not require_t2) or t2_bear
+t3_long_ok  = debug_bypass or (not require_t3) or t3_bull
+t3_short_ok = debug_bypass or (not require_t3) or t3_bear
+long_sig  = in_entry_window and t1_long_ok  and t2_long_ok  and t3_long_ok  and strategy.opentrades == 0 and fresh_bar
+short_sig = in_entry_window and t1_short_ok and t2_short_ok and t3_short_ok and strategy.opentrades == 0 and allow_short and fresh_bar
+
+// === TARGET CALC ===
+calc_long_tp()  => exit_mode == "points" ? close + target_pts : exit_mode == "atr" ? close + target_atr * atr14 : exit_mode == "combo" ? math.min(close + target_pts, close + target_atr * atr14) : na
+calc_short_tp() => exit_mode == "points" ? close - target_pts : exit_mode == "atr" ? close - target_atr * atr14 : exit_mode == "combo" ? math.max(close - target_pts, close - target_atr * atr14) : na
+
+// === TRAIL STATE ===
+var float trail_long   = na
+var float trail_short  = na
+var float entry_anchor = na
+
+if strategy.position_size == 0
+    trail_long   := na
+    trail_short  := na
+    entry_anchor := na
+else
+    if na(entry_anchor)
+        entry_anchor := strategy.position_avg_price
+
+if use_trail and strategy.position_size > 0
+    profit_pts = high - entry_anchor
+    if profit_pts >= trail_after_atr * atr14
+        new_trail  = high - trail_mult * atr14
+        trail_long := na(trail_long) ? new_trail : math.max(trail_long, new_trail)
+
+if use_trail and strategy.position_size < 0
+    profit_pts  = entry_anchor - low
+    if profit_pts >= trail_after_atr * atr14
+        new_trail   = low + trail_mult * atr14
+        trail_short := na(trail_short) ? new_trail : math.min(trail_short, new_trail)
+
+// === ORDERS ===
+sl_long  = close - stop_atr * atr14
+sl_short = close + stop_atr * atr14
+
+if long_sig
+    tp = calc_long_tp()
+    strategy.entry("L", strategy.long, alert_message = '{"action":"buy","sentiment":"long","quantity":"' + qty_str + '"}')
+    if not na(tp)
+        strategy.exit("L X", "L", stop = sl_long, limit = tp, alert_message = '{"action":"sell","sentiment":"flat","quantity":"' + qty_str + '"}')
+    else
+        strategy.exit("L X", "L", stop = sl_long, alert_message = '{"action":"sell","sentiment":"flat","quantity":"' + qty_str + '"}')
+    last_entry_bar := bar_index
+
+if short_sig
+    tp = calc_short_tp()
+    strategy.entry("S", strategy.short, alert_message = '{"action":"sell","sentiment":"short","quantity":"' + qty_str + '"}')
+    if not na(tp)
+        strategy.exit("S X", "S", stop = sl_short, limit = tp, alert_message = '{"action":"buy","sentiment":"flat","quantity":"' + qty_str + '"}')
+    else
+        strategy.exit("S X", "S", stop = sl_short, alert_message = '{"action":"buy","sentiment":"flat","quantity":"' + qty_str + '"}')
+    last_entry_bar := bar_index
+
+if use_trail and strategy.position_size > 0 and not na(trail_long)
+    tp_now = calc_long_tp()
+    ns     = math.max(trail_long, sl_long)
+    if not na(tp_now)
+        strategy.exit("L X", "L", stop = ns, limit = tp_now, alert_message = '{"action":"sell","sentiment":"flat","quantity":"' + qty_str + '"}')
+    else
+        strategy.exit("L X", "L", stop = ns, alert_message = '{"action":"sell","sentiment":"flat","quantity":"' + qty_str + '"}')
+
+if use_trail and strategy.position_size < 0 and not na(trail_short)
+    tp_now = calc_short_tp()
+    ns     = math.min(trail_short, sl_short)
+    if not na(tp_now)
+        strategy.exit("S X", "S", stop = ns, limit = tp_now, alert_message = '{"action":"buy","sentiment":"flat","quantity":"' + qty_str + '"}')
+    else
+        strategy.exit("S X", "S", stop = ns, alert_message = '{"action":"buy","sentiment":"flat","quantity":"' + qty_str + '"}')
+
+if flip_exit and strategy.position_size > 0 and flipDn
+    strategy.close("L", comment = "flip", alert_message = '{"action":"sell","sentiment":"flat","quantity":"' + qty_str + '"}')
+if flip_exit and strategy.position_size < 0 and flipUp
+    strategy.close("S", comment = "flip", alert_message = '{"action":"buy","sentiment":"flat","quantity":"' + qty_str + '"}')
+if kill_now and strategy.opentrades > 0
+    strategy.close_all(comment = "Kill 16:00", alert_message = '{"action":"sell","sentiment":"flat","quantity":"' + qty_str + '"}')
+
+// === PLOTS ===
+plotMid = plot(mid, "Midline", color = trend == 1 ? colUp : colDn, linewidth = 2)
+plotUp  = plot(trend == 1  ? lockDn : na, "Lower Cloud", color = color.new(colUp, 70))
+plotDn  = plot(trend == -1 ? lockUp : na, "Upper Cloud", color = color.new(colDn, 70))
+fill(plotMid, plotUp, color = color.new(colUp, 85))
+fill(plotMid, plotDn, color = color.new(colDn, 85))
+barcolor(trend == 1 ? colUp : colDn)
+plotshape(flipUp,    "Bull Flip", shape.triangleup,   location.belowbar, colUp,       size = size.small)
+plotshape(flipDn,    "Bear Flip", shape.triangledown, location.abovebar, colDn,       size = size.small)
+plotshape(long_sig,  "LONG",     shape.triangleup,   location.belowbar, color.white, size = size.normal)
+plotshape(short_sig, "SHORT",    shape.triangledown, location.abovebar, color.white, size = size.normal)
+
+// Exit labels
+exit_long  = strategy.position_size == 0 and strategy.position_size[1] > 0
+exit_short = strategy.position_size == 0 and strategy.position_size[1] < 0
+if exit_long or exit_short
+    n       = strategy.closedtrades - 1
+    pnl     = strategy.closedtrades.profit(n)
+    exit_px = strategy.closedtrades.exit_price(n)
+    is_tp   = pnl > 0
+    lbl_txt = (is_tp ? "TP " : "SL ") + str.tostring(exit_px, "#.##")
+    lbl_clr = is_tp ? color.new(color.lime, 15) : color.new(color.red, 15)
+    lbl_y   = exit_long  ? (is_tp ? high : low) : (is_tp ? low : high)
+    lbl_st  = exit_long  ? (is_tp ? label.style_label_up : label.style_label_down) : (is_tp ? label.style_label_down : label.style_label_up)
+    label.new(bar_index, lbl_y, lbl_txt, color = lbl_clr, textcolor = color.white, style = lbl_st, size = size.small, text_font_family = font.family_monospace)
+
+// Status table
+if barstate.islast
+    var table tbl = table.new(position.top_right, 2, 7, bgcolor = color.new(color.black, 55), border_color = color.new(color.gray, 70), border_width = 1, frame_color = color.new(color.gray, 50), frame_width = 1)
+    clr_now = trend == 1 ? colUp : colDn
+    table.cell(tbl, 0, 0, "THE SLAM v4", text_color = clr_now, bgcolor = color.new(clr_now, 80), text_font_family = font.family_monospace, text_halign = text.align_center)
+    table.merge_cells(tbl, 0, 0, 1, 0)
+    t1_txt = t1_up_timer > 0 ? "FLIP UP [" + str.tostring(t1_up_timer) + "]" : t1_dn_timer > 0 ? "FLIP DN [" + str.tostring(t1_dn_timer) + "]" : trend == 1 ? "bull zone" : "bear zone"
+    t1_clr = t1_up_timer > 0 ? color.lime : t1_dn_timer > 0 ? color.red : color.gray
+    table.cell(tbl, 0, 1, "T1 Loomi",   text_color = color.gray, text_font_family = font.family_monospace, text_size = size.small)
+    table.cell(tbl, 1, 1, t1_txt, text_color = t1_clr, text_font_family = font.family_monospace, text_size = size.small)
+    t2_disp = t2_bull ? "bull zone" : "bear zone"
+    t2_dclr = t2_bull ? color.lime : color.red
+    table.cell(tbl, 0, 2, "T2 " + t2_tf + "m MACD", text_color = color.gray, text_font_family = font.family_monospace, text_size = size.small)
+    table.cell(tbl, 1, 2, t2_disp, text_color = t2_dclr, text_font_family = font.family_monospace, text_size = size.small)
+    t3_disp = t3_bull ? "bull zone" : "bear zone"
+    t3_dclr = t3_bull ? color.lime : color.red
+    table.cell(tbl, 0, 3, "T3 " + t3_tf + "m MACD", text_color = color.gray, text_font_family = font.family_monospace, text_size = size.small)
+    table.cell(tbl, 1, 3, t3_disp, text_color = t3_dclr, text_font_family = font.family_monospace, text_size = size.small)
+    dbg_disp = debug_bypass ? "ON T1 only" : "off"
+    dbg_clr  = debug_bypass ? color.yellow : color.gray
+    table.cell(tbl, 0, 4, "Debug",    text_color = color.gray, text_font_family = font.family_monospace, text_size = size.small)
+    table.cell(tbl, 1, 4, dbg_disp,   text_color = dbg_clr,   text_font_family = font.family_monospace, text_size = size.small)
+    string pos_txt = "FLAT"
+    color  pos_clr = color.gray
+    if strategy.position_size > 0
+        pos_txt := "LONG @ " + str.tostring(strategy.position_avg_price, "#.##")
+        pos_clr := color.lime
+    if strategy.position_size < 0
+        pos_txt := "SHORT @ " + str.tostring(strategy.position_avg_price, "#.##")
+        pos_clr := color.red
+    table.cell(tbl, 0, 5, "Position", text_color = color.gray, text_font_family = font.family_monospace, text_size = size.small)
+    table.cell(tbl, 1, 5, pos_txt,    text_color = pos_clr,   text_font_family = font.family_monospace, text_size = size.small)
+    string pnl_txt = "-"
+    color  pnl_clr = color.gray
+    if strategy.position_size != 0
+        op      = strategy.openprofit
+        pnl_txt := (op >= 0 ? "+" : "") + str.tostring(op, "#.##")
+        pnl_clr := op >= 0 ? color.lime : color.red
+    table.cell(tbl, 0, 6, "Open P/L", text_color = color.gray, text_font_family = font.family_monospace, text_size = size.small)
+    table.cell(tbl, 1, 6, pnl_txt,    text_color = pnl_clr,   text_font_family = font.family_monospace, text_size = size.small)
+
+// === ALERTS ===
+if long_sig
+    alert("SLAM LONG "  + syminfo.ticker + " " + timeframe.period + " @ " + str.tostring(close, "#.##"), alert.freq_once_per_bar)
+if short_sig
+    alert("SLAM SHORT " + syminfo.ticker + " " + timeframe.period + " @ " + str.tostring(close, "#.##"), alert.freq_once_per_bar)
+if flip_exit and strategy.position_size > 0 and flipDn
+    alert("SLAM EXIT LONG "  + syminfo.ticker, alert.freq_once_per_bar)
+if flip_exit and strategy.position_size < 0 and flipUp
+    alert("SLAM EXIT SHORT " + syminfo.ticker, alert.freq_once_per_bar)
+if kill_now and strategy.opentrades > 0
+    alert("SLAM KILL " + syminfo.ticker, alert.freq_once_per_bar)

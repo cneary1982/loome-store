@@ -1,0 +1,319 @@
+//@version=6
+// ORB15 Retest -- Fib + VPA [v7]
+// TWO INDEPENDENT ENGINES: LONG SYSTEM and SHORT SYSTEM.
+// Each has its own Fib %, filters, initial stop, hard TP, and trail.
+// Trail gate ("dead until TP1") REMOVED -- trail now has its own activation.
+strategy("ORB Retest Fib90 VPA [v7]",
+     overlay                 = true,
+     max_bars_back           = 500,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     pyramiding              = 0,
+     commission_type         = strategy.commission.cash_per_contract,
+     commission_value        = 0.62,
+     slippage                = 1,
+     calc_on_every_tick      = false,
+     process_orders_on_close = true)
+
+// ============================================================
+// GLOBAL
+// ============================================================
+g_g = "Global"
+atrLen     = input.int(14, "ATR Length",                    minval=5, maxval=50, group=g_g)
+volAvgBars = input.int(30, "Volume baseline (rolling bars)", minval=5, maxval=200, group=g_g)
+sessStr    = input.session("0930-1600", "Trading Session", group=g_g)
+forceCl    = input.session("1555-1600", "Force Close",     group=g_g)
+
+// ============================================================
+// LONG SYSTEM
+// ============================================================
+gL = "LONG SYSTEM"
+L_on        = input.bool(true,  "Longs Enabled",                         group=gL)
+L_fibPct    = input.float(0.90, "L Fib Retest %", minval=0.50, maxval=0.95, step=0.05, group=gL)
+L_volFilt   = input.bool(true,  "L Volume Filter",                       group=gL)
+L_volMult   = input.float(1.2,  "L Volume Threshold x", minval=1.0, step=0.05, group=gL)
+L_wickFilt  = input.bool(false, "L Wick-Rejection Filter",               group=gL)
+L_stopSrc   = input.string("ORB Low", "L Initial Stop", options=["ORB Low", "Custom Points"], group=gL)
+L_stopPts   = input.float(20.0, "L Custom Stop (points)", minval=1.0, step=1.0, group=gL)
+L_useTP     = input.bool(true,  "L Hard Take Profit",                    group=gL)
+L_tpR       = input.float(2.0,  "L TP (R multiple)", minval=0.5, maxval=10.0, step=0.5, group=gL)
+L_useTrail  = input.bool(true,  "L Trail Enabled",                       group=gL)
+L_trailAct  = input.string("At 0.5R", "L Trail Activation", options=["From Entry", "At 0.5R", "At 1R"], group=gL)
+L_trailUnit = input.string("ATR", "L Trail Unit", options=["ATR", "Points"], group=gL)
+L_trailVal  = input.float(1.5,  "L Trail Value (ATR mult or points)", minval=0.1, step=0.1, group=gL)
+L_ctOn      = input.bool(true,  "L Counter-Trend Exit",                  group=gL)
+L_ctWin     = input.int(6,      "L CT Window (bars, hard cap)", minval=1, maxval=20, group=gL)
+
+// ============================================================
+// SHORT SYSTEM
+// ============================================================
+gS = "SHORT SYSTEM"
+S_on        = input.bool(true,  "Shorts Enabled",                        group=gS)
+S_fibPct    = input.float(0.90, "S Fib Retest %", minval=0.50, maxval=0.95, step=0.05, group=gS)
+S_volFilt   = input.bool(true,  "S Volume Filter",                       group=gS)
+S_volMult   = input.float(1.2,  "S Volume Threshold x", minval=1.0, step=0.05, group=gS)
+S_wickFilt  = input.bool(false, "S Wick-Rejection Filter",               group=gS)
+S_cancelRev = input.bool(true,  "S Cancel-Reversal",                     group=gS)
+S_stopSrc   = input.string("ORB High", "S Initial Stop", options=["ORB High", "Custom Points"], group=gS)
+S_stopPts   = input.float(20.0, "S Custom Stop (points)", minval=1.0, step=1.0, group=gS)
+S_useTP     = input.bool(true,  "S Hard Take Profit",                    group=gS)
+S_tpR       = input.float(2.0,  "S TP (R multiple)", minval=0.5, maxval=10.0, step=0.5, group=gS)
+S_useTrail  = input.bool(true,  "S Trail Enabled",                       group=gS)
+S_trailAct  = input.string("From Entry", "S Trail Activation", options=["From Entry", "At 0.5R", "At 1R"], group=gS)
+S_trailUnit = input.string("ATR", "S Trail Unit", options=["ATR", "Points"], group=gS)
+S_trailVal  = input.float(1.5,  "S Trail Value (ATR mult or points)", minval=0.1, step=0.1, group=gS)
+S_ctOn      = input.bool(true,  "S Counter-Trend Exit",                  group=gS)
+S_ctWin     = input.int(6,      "S CT Window (bars, hard cap)", minval=1, maxval=20, group=gS)
+
+g_v = "Visuals"
+colL  = input.color(#00B0FF, "Long color",  group=g_v)
+colS  = input.color(#FF1744, "Short color", group=g_v)
+
+// ============================================================
+// SESSION + ORB BUILD
+// ============================================================
+in_sess  = not na(time(timeframe.period, sessStr, timezone="America/New_York"))
+in_force = not na(time(timeframe.period, forceCl, timezone="America/New_York"))
+is_first = in_sess and not in_sess[1]
+
+var float orb_h    = na
+var float orb_l    = na
+var float fib_long = na
+var float fib_short= na
+var int   orb_ct   = 0
+var bool  orb_done = false
+
+var bool  long_armed   = false
+var bool  short_armed  = false
+var int   bear_wait_ct = -1
+var bool  long_filled  = false
+var bool  short_filled = false
+
+if is_first
+    orb_h := na
+    orb_l := na
+    fib_long := na
+    fib_short := na
+    orb_ct := 0
+    orb_done := false
+    long_armed := false
+    short_armed := false
+    bear_wait_ct := -1
+    long_filled := false
+    short_filled := false
+
+if in_sess and not orb_done
+    if na(orb_h)
+        orb_h := high
+        orb_l := low
+    else
+        orb_h := math.max(orb_h, high)
+        orb_l := math.min(orb_l, low)
+    orb_ct := orb_ct + 1
+    if orb_ct >= 3
+        orb_done  := true
+        rng       = orb_h - orb_l
+        fib_long  := orb_l + L_fibPct * rng
+        fib_short := orb_l + (1.0 - S_fibPct) * rng
+
+// ============================================================
+// INDICATORS
+// ============================================================
+vol_baseline = ta.sma(volume, volAvgBars)
+vol_ratio    = not na(vol_baseline) and vol_baseline > 0 ? volume / vol_baseline : na
+atr_val      = ta.atr(atrLen)
+
+_body   = math.abs(close - open)
+_upWick = high - math.max(close, open)
+_loWick = math.min(close, open) - low
+upper_rej = _upWick > _body * 1.5 and _upWick > _loWick
+lower_rej = _loWick > _body * 1.5 and _loWick > _upWick
+is_bulleng = close > open and close[1] < open[1] and close >= open[1] and open <= close[1]
+is_beareng = close < open and close[1] > open[1] and close <= open[1] and open >= close[1]
+is_hammer  = _body > 0 and _loWick >= _body * 2.0 and _upWick <= _body * 0.5
+is_shoot   = _body > 0 and _upWick >= _body * 2.0 and _loWick <= _body * 0.5
+
+ct_bear_pattern = is_beareng or is_shoot or upper_rej   // closes a LONG
+ct_bull_pattern = is_bulleng or is_hammer or lower_rej  // closes a SHORT
+
+// ============================================================
+// BREAKOUT + FILTERS
+// ============================================================
+bull_break = orb_done and in_sess and not long_armed and not short_armed and bear_wait_ct < 0 and close > orb_h
+bear_break = orb_done and in_sess and not long_armed and not short_armed and bear_wait_ct < 0 and close < orb_l
+
+L_volOK  = not L_volFilt  or (not na(vol_ratio) and vol_ratio >= L_volMult)
+S_volOK  = not S_volFilt  or (not na(vol_ratio) and vol_ratio >= S_volMult)
+L_wickOK = not L_wickFilt or not upper_rej
+S_wickOK = not S_wickFilt or not lower_rej
+
+bull_break_trade = bull_break and L_on and L_volOK and L_wickOK
+bear_break_trade = bear_break and S_on and S_volOK and S_wickOK
+
+if bull_break_trade
+    long_armed := true
+
+// Cancel-Reversal (shorts only): wait 1 bar, skip if price closes back inside ORB
+short_cancelled = false
+if bear_break_trade
+    if S_cancelRev
+        bear_wait_ct := 0
+    else
+        short_armed := true
+else if bear_wait_ct == 0
+    bear_wait_ct := 1
+else if bear_wait_ct == 1
+    if close >= orb_l
+        short_cancelled := true
+        bear_wait_ct    := -1
+    else
+        short_armed  := true
+        bear_wait_ct := -1
+
+// ============================================================
+// TRADE STATE
+// ============================================================
+var float entry_p        = na
+var float stop_p         = na
+var float target_p       = na
+var float init_stop      = na
+var float trade_R        = na
+var bool  dir_long       = false
+var float fav_ext        = na
+var int   bars_in_trade  = -1
+
+if strategy.position_size != 0
+    bars_in_trade := nz(strategy.position_size[1]) == 0 ? 0 : bars_in_trade + 1
+else
+    bars_in_trade := -1
+
+// ============================================================
+// ENTRIES  (limit at Fib retest, one authoritative exit each)
+// ============================================================
+long_fill  = long_armed  and not long_filled  and in_sess and strategy.position_size == 0 and low  <= fib_long
+short_fill = short_armed and not short_filled and in_sess and strategy.position_size == 0 and high >= fib_short
+
+if long_fill
+    entry_p   := fib_long
+    init_stop := L_stopSrc == "Custom Points" ? fib_long - L_stopPts : orb_l
+    stop_p    := init_stop
+    trade_R   := entry_p - init_stop
+    target_p  := L_useTP ? entry_p + L_tpR * trade_R : na
+    dir_long  := true
+    fav_ext   := fib_long
+    long_filled := true
+    strategy.entry("L", strategy.long, limit=fib_long)
+    strategy.exit("L-X", "L", stop=init_stop, limit=target_p)
+
+if short_fill
+    entry_p   := fib_short
+    init_stop := S_stopSrc == "Custom Points" ? fib_short + S_stopPts : orb_h
+    stop_p    := init_stop
+    trade_R   := init_stop - entry_p
+    target_p  := S_useTP ? entry_p - S_tpR * trade_R : na
+    dir_long  := false
+    fav_ext   := fib_short
+    short_filled := true
+    strategy.entry("S", strategy.short, limit=fib_short)
+    strategy.exit("S-X", "S", stop=init_stop, limit=target_p)
+
+// ============================================================
+// TRAIL  (independent activation -- no TP1 gate)
+// ============================================================
+in_trade = strategy.position_size != 0
+
+if in_trade
+    fav_ext := dir_long ? math.max(fav_ext, high) : math.min(fav_ext, low)
+
+useTrail  = dir_long ? L_useTrail  : S_useTrail
+trailAct  = dir_long ? L_trailAct  : S_trailAct
+trailUnit = dir_long ? L_trailUnit : S_trailUnit
+trailVal  = dir_long ? L_trailVal  : S_trailVal
+useTP     = dir_long ? L_useTP     : S_useTP
+
+if in_trade and useTrail and trade_R > 0
+    progressR = dir_long ? (fav_ext - entry_p) / trade_R : (entry_p - fav_ext) / trade_R
+    trail_active = trailAct == "From Entry" ? true : trailAct == "At 0.5R" ? progressR >= 0.5 : progressR >= 1.0
+    if trail_active
+        dist     = trailUnit == "ATR" ? trailVal * atr_val : trailVal
+        new_stop = dir_long ? fav_ext - dist : fav_ext + dist
+        new_stop := dir_long ? math.max(new_stop, stop_p) : math.min(new_stop, stop_p)
+        if new_stop != stop_p
+            stop_p := new_stop
+            if dir_long
+                strategy.exit("L-X", "L", stop=stop_p, limit=useTP ? target_p : na)
+            else
+                strategy.exit("S-X", "S", stop=stop_p, limit=useTP ? target_p : na)
+
+// ============================================================
+// COUNTER-TREND EXIT  (hard-capped window, uses strategy.close)
+// ============================================================
+ct_exit_long  = false
+ct_exit_short = false
+
+if strategy.position_size > 0 and L_ctOn and bars_in_trade >= 0 and bars_in_trade < L_ctWin and ct_bear_pattern
+    strategy.close("L", comment="CT")
+    ct_exit_long := true
+
+if strategy.position_size < 0 and S_ctOn and bars_in_trade >= 0 and bars_in_trade < S_ctWin and ct_bull_pattern
+    strategy.close("S", comment="CT")
+    ct_exit_short := true
+
+// ============================================================
+// FORCE CLOSE EOD
+// ============================================================
+if in_force and strategy.position_size != 0
+    strategy.close_all(comment="EOD")
+
+// ============================================================
+// PLOTS
+// ============================================================
+plot(orb_done ? orb_h : na,     "ORB High", color=color.new(#1B5E20, 0), linewidth=2, style=plot.style_linebr)
+plot(orb_done ? orb_l : na,     "ORB Low",  color=color.new(#B71C1C, 0), linewidth=2, style=plot.style_linebr)
+plot(orb_done ? fib_long  : na, "L Fib",    color=color.new(colL, 0),    linewidth=1, style=plot.style_linebr)
+plot(orb_done ? fib_short : na, "S Fib",    color=color.new(colS, 0),    linewidth=1, style=plot.style_linebr)
+
+ep = plot(in_trade ? entry_p  : na, "Entry", color=color.new(#FFFFFF, 40), linewidth=1, style=plot.style_linebr)
+sp = plot(in_trade ? stop_p   : na, "Stop",  color=color.new(#FF1744, 0),  linewidth=2, style=plot.style_linebr)
+tp = plot(in_trade ? target_p : na, "TP",    color=color.new(#00E676, 0),  linewidth=2, style=plot.style_linebr)
+fill(sp, tp, color=strategy.position_size > 0 ? color.new(colL, 80) : strategy.position_size < 0 ? color.new(colS, 80) : na, title="Trade Zone")
+
+plotshape(long_fill,  "Long Entry",  location=location.belowbar, style=shape.triangleup,   color=colL, size=size.small)
+plotshape(short_fill, "Short Entry", location=location.abovebar, style=shape.triangledown, color=colS, size=size.small)
+plotshape(ct_exit_long,  "CT Long Exit",  location=location.abovebar, style=shape.xcross, color=#FF6F00, size=size.tiny)
+plotshape(ct_exit_short, "CT Short Exit", location=location.belowbar, style=shape.xcross, color=#FF6F00, size=size.tiny)
+
+// ============================================================
+// DASHBOARD  (compact -- long vs short split)
+// ============================================================
+var float L_net = 0.0
+var float S_net = 0.0
+var int   L_n   = 0
+var int   S_n   = 0
+if strategy.closedtrades > strategy.closedtrades[1]
+    idx     = strategy.closedtrades - 1
+    pnl     = strategy.closedtrades.profit(idx)
+    wasLong = strategy.closedtrades.entry_id(idx) == "L"
+    if wasLong
+        L_net := L_net + pnl
+        L_n   := L_n + 1
+    else
+        S_net := S_net + pnl
+        S_n   := S_n + 1
+
+var table dash = table.new(position.top_right, 2, 5,
+     bgcolor=color.new(#1e222d, 0), frame_color=color.new(#373a46, 0), frame_width=2,
+     border_color=color.new(#373a46, 0), border_width=1)
+
+if barstate.islast
+    table.cell(dash, 0, 0, "ORB v7", text_color=#00C2FF, text_size=size.small)
+    table.cell(dash, 1, 0, syminfo.ticker, text_color=#8B949E, text_size=size.small)
+    table.cell(dash, 0, 1, "Long $",  text_color=#8B949E, text_size=size.tiny)
+    table.cell(dash, 1, 1, "$" + str.tostring(L_net, "#,###") + "  (" + str.tostring(L_n) + ")", text_color=L_net >= 0 ? #00E676 : #FF5252, text_size=size.small)
+    table.cell(dash, 0, 2, "Short $", text_color=#8B949E, text_size=size.tiny)
+    table.cell(dash, 1, 2, "$" + str.tostring(S_net, "#,###") + "  (" + str.tostring(S_n) + ")", text_color=S_net >= 0 ? #00E676 : #FF5252, text_size=size.small)
+    table.cell(dash, 0, 3, "Net $",   text_color=#8B949E, text_size=size.tiny)
+    table.cell(dash, 1, 3, "$" + str.tostring(strategy.netprofit, "#,###"), text_color=strategy.netprofit >= 0 ? #00E676 : #FF5252, text_size=size.small)
+    wr = strategy.closedtrades > 0 ? strategy.wintrades * 100.0 / strategy.closedtrades : 0.0
+    table.cell(dash, 0, 4, "Win %",   text_color=#8B949E, text_size=size.tiny)
+    table.cell(dash, 1, 4, str.tostring(wr, "#.0") + "%", text_color=#FFD600, text_size=size.small)
