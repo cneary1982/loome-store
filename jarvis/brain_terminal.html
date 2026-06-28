@@ -90,12 +90,80 @@ tailwind.config = {
   .nav-item[title]:hover::after { content:attr(title); position:absolute; left:100%; top:50%; transform:translateY(-50%); margin-left:12px; background:#1a1c1c; color:#fff; font-family:Inter,sans-serif; font-size:12px; font-weight:400; padding:8px 12px; border-radius:8px; white-space:nowrap; z-index:100; pointer-events:none; box-shadow:0 4px 12px rgba(0,0,0,.15); max-width:320px; white-space:normal; line-height:1.4; }
   .toast { position:fixed; top:24px; right:24px; background:#1a1c1c; color:#fff; padding:14px 18px; border-radius:0.5rem; font-family: Sora; font-size:13px; font-weight:500; box-shadow:0 8px 20px rgba(0,0,0,0.15); z-index:1000; opacity:0; transform: translateY(-10px); transition: all .25s; pointer-events:none; }
   .toast.show { opacity:1; transform: translateY(0); pointer-events:auto; }
+
+  /* ── Collapsible sidebar ── */
+  aside.collapsed { width:60px !important; }
+  aside.collapsed span:not(.material-symbols-outlined) { display:none; }
+  aside.collapsed .nav-item { justify-content:center; padding:10px 0; }
+  aside.collapsed .font-sora.font-bold { display:none; }
+  aside.collapsed .font-sora.text-\[9\.5px\] { display:none; }
+  aside.collapsed .btn.btn-primary.w-full span:not(.material-symbols-outlined) { display:none; }
+  aside.collapsed .btn.btn-primary.w-full { padding:10px; justify-content:center; }
+  aside.collapsed button.w-full span:not(.material-symbols-outlined) { display:none; }
+  aside.collapsed button.w-full { padding:10px; justify-content:center; }
+  aside.collapsed .px-md { padding-left:8px; padding-right:8px; }
+  aside.collapsed .nav-item[title]:hover::after { left:60px; }
+  aside.collapsed + header { left:60px !important; }
+  aside.collapsed ~ main { margin-left:60px !important; }
+  #sidebar-toggle { position:absolute; top:12px; right:-14px; width:28px; height:28px; border-radius:50%; background:#fff; border:1px solid #ededed; cursor:pointer; display:flex; align-items:center; justify-content:center; z-index:50; box-shadow:0 2px 6px rgba(0,0,0,.08); transition:transform .2s; }
+  #sidebar-toggle:hover { background:#f3f4f6; }
+  aside.collapsed #sidebar-toggle .material-symbols-outlined { transform:rotate(180deg); }
+
+  /* ── Trade notification stack ── */
+  #trade-notifications { position:fixed; top:80px; right:24px; z-index:999; display:flex; flex-direction:column; gap:8px; pointer-events:none; }
+  .trade-notif { background:#fff; border:1px solid #ededed; border-radius:0.75rem; padding:12px 16px; box-shadow:0 8px 24px rgba(0,0,0,.12); font-family:Inter,sans-serif; font-size:13px; opacity:0; transform:translateX(100%); transition:all .35s; pointer-events:auto; min-width:280px; max-width:360px; }
+  .trade-notif.show { opacity:1; transform:translateX(0); }
+  .trade-notif.hide { opacity:0; transform:translateX(100%); }
+
+  /* ── Dark mode ── */
+  body.dark-mode { background:#0f0f0f !important; color:#e2e2e2 !important; }
+  body.dark-mode .card, body.dark-mode .card-flat { background:#1a1a1a !important; border-color:#2a2a2a !important; }
+  body.dark-mode aside { background:#111 !important; border-color:#222 !important; }
+  body.dark-mode header { background:#111 !important; border-color:#222 !important; }
+  body.dark-mode .nav-item:not(.active) { color:#9a9b9e; }
+  body.dark-mode .nav-item:not(.active):hover { background:#222 !important; color:#fff; }
+  body.dark-mode table th { color:#9a9b9e; border-color:#2a2a2a; }
+  body.dark-mode table td { border-color:#1e1e1e; }
+  body.dark-mode table tr:hover td { background:#1e1e1e !important; }
+  body.dark-mode .input, body.dark-mode select { background:#1a1a1a !important; border-color:#333 !important; color:#e2e2e2 !important; }
+  body.dark-mode .btn-ghost { border-color:#333 !important; color:#e2e2e2 !important; }
+  body.dark-mode .btn-ghost:hover { background:#222 !important; }
+  body.dark-mode .text-\[\#76777d\] { color:#9a9b9e !important; }
+  body.dark-mode .text-\[\#a0a3a8\] { color:#6a6d72 !important; }
+  body.dark-mode .text-\[\#1a1c1c\] { color:#e2e2e2 !important; }
+  body.dark-mode .text-\[\#45464d\] { color:#b0b1b5 !important; }
+  body.dark-mode .bg-\[\#f3f3f4\], body.dark-mode .bg-\[\#f3f4f6\] { background:#222 !important; }
+  body.dark-mode .bg-\[\#f8f9fa\], body.dark-mode .bg-\[\#f8faf8\] { background:#1a1a1a !important; }
+  body.dark-mode .border-\[\#ededed\], body.dark-mode .border-\[\#e2e8f0\], body.dark-mode .border-\[\#e2e2e2\] { border-color:#2a2a2a !important; }
+  body.dark-mode .pill.bg-\[\#e2e8f0\] { background:#333 !important; }
+  body.dark-mode #sidebar-toggle { background:#1a1a1a; border-color:#333; }
+  body.dark-mode .nav-item[title]:hover::after { background:#333; }
+  body.dark-mode .toast { background:#333; }
+
+  /* ── Mobile responsive ── */
+  @media (max-width: 768px) {
+    aside:not(.mobile-open) { transform:translateX(-100%); }
+    aside { transition:transform .25s; position:fixed; z-index:50; }
+    aside.mobile-open { transform:translateX(0); }
+    header { left:0 !important; }
+    main { margin-left:0 !important; }
+    .grid-bento { grid-template-columns:1fr !important; }
+    .grid.grid-cols-3, .grid.grid-cols-4 { grid-template-columns:1fr 1fr !important; }
+    .col-span-8, .col-span-4, .col-span-1, .col-span-2 { grid-column:span 1 !important; }
+    #mobile-menu-btn { display:flex !important; }
+    #sidebar-toggle { display:none; }
+  }
+  @media (min-width: 769px) {
+    #mobile-menu-btn { display:none !important; }
+    #mobile-overlay { display:none !important; }
+  }
 </style>
 </head>
 <body>
 
 <!-- ═════════════════ SIDEBAR ═════════════════ -->
-<aside class="fixed left-0 top-0 h-screen w-64 bg-white border-r border-[#ededed] flex flex-col z-40">
+<aside id="sidebar" class="fixed left-0 top-0 h-screen w-64 bg-white border-r border-[#ededed] flex flex-col z-40">
+  <button id="sidebar-toggle" onclick="toggleSidebar()" title="Collapse sidebar"><span class="material-symbols-outlined text-[16px] text-[#76777d]">chevron_left</span></button>
   <div class="px-md py-lg">
     <div class="flex items-center gap-sm">
       <div class="w-9 h-9 rounded-md bg-black flex items-center justify-center">
@@ -139,6 +207,7 @@ tailwind.config = {
 <!-- ═════════════════ TOP BAR ═════════════════ -->
 <header class="fixed top-0 left-64 right-0 h-16 bg-white border-b border-[#ededed] z-30 flex items-center justify-between px-md">
   <div class="flex items-center gap-md">
+    <button id="mobile-menu-btn" onclick="toggleMobileMenu()" class="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-[#f3f4f6]" style="display:none"><span class="material-symbols-outlined text-[22px]">menu</span></button>
     <h2 class="font-sora text-[22px] font-semibold tracking-tight">Dashboard</h2>
     <div id="liveStatus" class="flex items-center gap-2 bg-[#f3f3f4] px-3 py-1 rounded-full border border-[#e2e8f0]">
       <span class="pulse-dot"></span>
@@ -152,7 +221,8 @@ tailwind.config = {
     </div>
     <span id="envBadge" class="pill bg-tertiary-fixed text-on-tertiary-fixed">sandbox</span>
     <button id="speakBtn" onclick="jarvisGreet(true)" title="Hear JARVIS's status read-out" class="btn-ghost text-[13px] py-2 px-3 rounded-lg flex items-center gap-1.5"><span class="material-symbols-outlined text-[18px]">graphic_eq</span>Speak</button>
-    <button class="w-9 h-9 rounded-full bg-[#f3f3f4] flex items-center justify-center"><span class="material-symbols-outlined text-[20px] text-[#45464d]">notifications</span></button>
+    <button onclick="toggleDarkMode()" title="Toggle dark mode" class="w-9 h-9 rounded-full bg-[#f3f3f4] flex items-center justify-center"><span id="darkModeIcon" class="material-symbols-outlined text-[20px] text-[#45464d]">dark_mode</span></button>
+    <button onclick="toggleSoundAlerts()" title="Toggle sound alerts" class="w-9 h-9 rounded-full bg-[#f3f3f4] flex items-center justify-center"><span id="soundIcon" class="material-symbols-outlined text-[20px] text-[#45464d]">volume_off</span></button>
     <button class="w-9 h-9 rounded-full bg-[#f3f3f4] flex items-center justify-center"><span class="material-symbols-outlined text-[20px] text-[#45464d]">account_circle</span></button>
   </div>
 </header>
@@ -174,6 +244,41 @@ tailwind.config = {
     </div>
     <div id="dash_best3" class="grid grid-cols-3 gap-md">
       <div class="card-flat p-md text-center text-[#76777d] col-span-3 py-lg font-inter text-[13px]">Loading best 3…</div>
+    </div>
+  </div>
+
+  <!-- Daily P&L Hero + Quick Trade -->
+  <div class="grid grid-cols-12 gap-md mb-md">
+    <div class="col-span-8 card p-md">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="font-sora text-[11px] uppercase tracking-widest text-[#76777d]">Today's P&L</p>
+          <p id="dash_daily_pnl" class="font-sora text-[48px] font-bold data-mono mt-1 leading-none">$0</p>
+          <div class="flex items-center gap-4 mt-2">
+            <span class="font-inter text-[13px] text-[#76777d]">Realized <span id="dash_realized" class="font-semibold data-mono">$0</span></span>
+            <span class="font-inter text-[13px] text-[#76777d]">Unrealized <span id="dash_unrealized" class="font-semibold data-mono">$0</span></span>
+            <span class="font-inter text-[13px] text-[#76777d]">Trades <span id="dash_trade_count" class="font-semibold">0</span></span>
+          </div>
+        </div>
+        <div class="text-right">
+          <p class="font-sora text-[11px] uppercase tracking-widest text-[#76777d]">Win Rate Today</p>
+          <p id="dash_daily_wr" class="font-sora text-[28px] font-semibold mt-1">—</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-span-4 card p-md">
+      <p class="font-sora text-[11px] uppercase tracking-widest text-[#76777d] mb-2">Quick Trade</p>
+      <div class="space-y-2">
+        <div class="flex gap-2">
+          <input id="qt_symbol" type="text" placeholder="AAPL" class="input font-mono text-[13px] uppercase flex-1 py-1.5 px-2" />
+          <select id="qt_side" class="input text-[13px] w-20 py-1.5 px-2"><option value="BUY">BUY</option><option value="SELL">SELL</option></select>
+        </div>
+        <div class="flex gap-2">
+          <input id="qt_qty" type="number" value="1" min="1" class="input data-mono text-[13px] flex-1 py-1.5 px-2" placeholder="Qty" />
+          <input id="qt_price" type="number" step="0.01" class="input data-mono text-[13px] flex-1 py-1.5 px-2" placeholder="Limit (mkt)" />
+        </div>
+        <button onclick="quickTrade()" class="btn btn-primary w-full text-[13px] py-2 flex items-center justify-center gap-1"><span class="material-symbols-outlined text-[16px]">bolt</span>Send Order</button>
+      </div>
     </div>
   </div>
 
@@ -2516,6 +2621,8 @@ const Exec = (()=>{
 
 </main>
 
+<div id="mobile-overlay" onclick="toggleMobileMenu()" class="fixed inset-0 bg-black/40 z-45" style="display:none"></div>
+<div id="trade-notifications"></div>
 <div id="toast" class="toast">Saved</div>
 
 <!-- ═════════════════ LIVE MARKET FEED PILL (LiveFeed namespace) ═════════════════ -->
@@ -5932,6 +6039,222 @@ const LiveFeed = (() => {
   document.addEventListener("DOMContentLoaded", start);
   return { start, stop, poll };
 })();
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// COLLAPSIBLE SIDEBAR
+// ══════════════════════════════════════════════════════════════════════════
+function toggleSidebar() {
+  const sb = document.getElementById("sidebar");
+  sb.classList.toggle("collapsed");
+  localStorage.setItem("jarvis_sidebar_collapsed", sb.classList.contains("collapsed") ? "1" : "");
+}
+(function() {
+  if (localStorage.getItem("jarvis_sidebar_collapsed") === "1") {
+    document.getElementById("sidebar").classList.add("collapsed");
+  }
+})();
+
+// ══════════════════════════════════════════════════════════════════════════
+// MOBILE MENU
+// ══════════════════════════════════════════════════════════════════════════
+function toggleMobileMenu() {
+  const sb = document.getElementById("sidebar");
+  const ov = document.getElementById("mobile-overlay");
+  const open = sb.classList.contains("mobile-open");
+  sb.classList.toggle("mobile-open", !open);
+  ov.style.display = open ? "none" : "block";
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// DARK MODE
+// ══════════════════════════════════════════════════════════════════════════
+function toggleDarkMode() {
+  const on = document.body.classList.toggle("dark-mode");
+  localStorage.setItem("jarvis_dark", on ? "1" : "");
+  const icon = document.getElementById("darkModeIcon");
+  if (icon) icon.textContent = on ? "light_mode" : "dark_mode";
+}
+(function() {
+  if (localStorage.getItem("jarvis_dark") === "1") {
+    document.body.classList.add("dark-mode");
+    const icon = document.getElementById("darkModeIcon");
+    if (icon) icon.textContent = "light_mode";
+  }
+})();
+
+// ══════════════════════════════════════════════════════════════════════════
+// SOUND ALERTS
+// ══════════════════════════════════════════════════════════════════════════
+let SOUND_ON = localStorage.getItem("jarvis_sound") === "1";
+(function() {
+  const icon = document.getElementById("soundIcon");
+  if (icon) icon.textContent = SOUND_ON ? "volume_up" : "volume_off";
+})();
+function toggleSoundAlerts() {
+  SOUND_ON = !SOUND_ON;
+  localStorage.setItem("jarvis_sound", SOUND_ON ? "1" : "");
+  const icon = document.getElementById("soundIcon");
+  if (icon) icon.textContent = SOUND_ON ? "volume_up" : "volume_off";
+  toast(SOUND_ON ? "Sound alerts ON" : "Sound alerts OFF");
+}
+function playTradeSound(type) {
+  if (!SOUND_ON) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    if (type === "entry") { osc.frequency.value = 880; osc.type = "sine"; }
+    else if (type === "exit") { osc.frequency.value = 440; osc.type = "triangle"; }
+    else { osc.frequency.value = 660; osc.type = "sine"; }
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start(); osc.stop(ctx.currentTime + 0.4);
+  } catch (e) {}
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// TRADE NOTIFICATIONS (real-time pop-ups)
+// ══════════════════════════════════════════════════════════════════════════
+function showTradeNotif(trade, type) {
+  const container = document.getElementById("trade-notifications");
+  if (!container) return;
+  const isEntry = type === "entry";
+  const side = (trade.side || "").toUpperCase();
+  const sym = trade.symbol || "???";
+  const price = trade.entry || trade.exit || 0;
+  const pnlStr = trade.pnl != null ? ` · P&L ${trade.pnl >= 0 ? "+" : ""}$${Math.abs(trade.pnl).toFixed(0)}` : "";
+  const color = isEntry ? (side.includes("BUY") || side.includes("LONG") ? "#10b981" : "#ef4444") : "#6366f1";
+  const icon = isEntry ? "login" : "logout";
+  const el = document.createElement("div");
+  el.className = "trade-notif";
+  el.innerHTML = `<div class="flex items-center gap-3">
+    <span class="material-symbols-outlined text-[22px]" style="color:${color}">${icon}</span>
+    <div>
+      <div class="font-sora font-semibold text-[14px]">${isEntry ? "New Trade" : "Trade Closed"}: ${sym}</div>
+      <div class="text-[12px] text-[#76777d]">${side} ${trade.qty || 1} @ $${Number(price).toFixed(2)}${pnlStr}</div>
+      ${trade.note ? `<div class="text-[11px] text-[#a0a3a8] italic mt-0.5">${trade.note}</div>` : ""}
+    </div>
+  </div>`;
+  container.appendChild(el);
+  requestAnimationFrame(() => { requestAnimationFrame(() => el.classList.add("show")); });
+  playTradeSound(type);
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(`Jarvis ${isEntry ? "Entered" : "Exited"}: ${sym}`, { body: `${side} ${trade.qty || 1} @ $${Number(price).toFixed(2)}${pnlStr}`, icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>" });
+  }
+  setTimeout(() => { el.classList.add("hide"); setTimeout(() => el.remove(), 400); }, 6000);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// AUTO-REFRESH (polls trades + portfolio every 10s when visible)
+// ══════════════════════════════════════════════════════════════════════════
+let AUTO_REFRESH_TIMER = null;
+let LAST_TRADE_IDS = new Set();
+
+async function autoRefreshTick() {
+  if (document.hidden) return;
+  try {
+    const t = await (await fetch(`${API()}/api/trades`)).json().catch(() => null);
+    if (t) {
+      const open = Array.isArray(t.open) ? t.open : [];
+      const closed = Array.isArray(t.closed) ? t.closed : [];
+      const allIds = new Set([...open.map(o => o.id), ...closed.map(c => c.id)]);
+      if (LAST_TRADE_IDS.size > 0) {
+        open.forEach(o => { if (o.id && !LAST_TRADE_IDS.has(o.id)) showTradeNotif(o, "entry"); });
+        closed.forEach(c => { if (c.id && !LAST_TRADE_IDS.has(c.id)) showTradeNotif(c, "exit"); });
+      }
+      LAST_TRADE_IDS = allIds;
+      updateDailyPnl(open, closed);
+    }
+  } catch (e) {}
+  if (CURRENT_VIEW === "portfolio") {
+    try { await loadTrades(); } catch (e) {}
+    try { await loadPortfolio(); } catch (e) {}
+  }
+  if (CURRENT_VIEW === "dashboard") {
+    try { await loadMetrics(); } catch (e) {}
+  }
+}
+
+function startAutoRefresh() {
+  if (AUTO_REFRESH_TIMER) return;
+  autoRefreshTick();
+  AUTO_REFRESH_TIMER = setInterval(autoRefreshTick, 10000);
+}
+function stopAutoRefresh() {
+  if (AUTO_REFRESH_TIMER) { clearInterval(AUTO_REFRESH_TIMER); AUTO_REFRESH_TIMER = null; }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopAutoRefresh(); else startAutoRefresh();
+});
+document.addEventListener("DOMContentLoaded", () => {
+  startAutoRefresh();
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// DAILY P&L (updated by auto-refresh)
+// ══════════════════════════════════════════════════════════════════════════
+function updateDailyPnl(open, closed) {
+  const today = new Date().toISOString().slice(0, 10);
+  const todayClosed = closed.filter(c => (c.closed || c.opened || "").slice(0, 10) === today);
+  const realized = todayClosed.reduce((s, c) => s + (c.pnl || 0), 0);
+  let unrealized = 0;
+  open.forEach(o => {
+    if (o.upnl != null) { unrealized += o.upnl; return; }
+    const mark = o.mark ?? o.last ?? o.current_price ?? null;
+    const entry = o.entry ?? 0;
+    const qty = o.qty || 1;
+    const dir = (o.side||"").toUpperCase().includes("SHORT") || (o.side||"").toUpperCase().includes("SELL") ? -1 : 1;
+    if (mark != null && entry) unrealized += (mark - entry) * qty * dir;
+  });
+  const total = realized + unrealized;
+  const wins = todayClosed.filter(c => (c.pnl || 0) > 0).length;
+  const wr = todayClosed.length ? ((wins / todayClosed.length) * 100).toFixed(0) + "%" : "—";
+  const setT = (id, v) => { const el = document.getElementById(id); if (el) el.innerHTML = v; };
+  const pnlEl = document.getElementById("dash_daily_pnl");
+  if (pnlEl) {
+    pnlEl.textContent = (total >= 0 ? "+$" : "-$") + Math.abs(total).toLocaleString(undefined, {maximumFractionDigits:0});
+    pnlEl.className = "font-sora text-[48px] font-bold data-mono mt-1 leading-none " + (total >= 0 ? "text-gain" : "text-loss");
+  }
+  setT("dash_realized", (realized >= 0 ? "+$" : "-$") + Math.abs(realized).toLocaleString(undefined, {maximumFractionDigits:0}));
+  setT("dash_unrealized", (unrealized >= 0 ? "+$" : "-$") + Math.abs(unrealized).toLocaleString(undefined, {maximumFractionDigits:0}));
+  setT("dash_trade_count", String(open.length + todayClosed.length));
+  const rEl = document.getElementById("dash_realized"); if (rEl) rEl.className = "font-semibold data-mono " + (realized >= 0 ? "text-gain" : "text-loss");
+  const uEl = document.getElementById("dash_unrealized"); if (uEl) uEl.className = "font-semibold data-mono " + (unrealized >= 0 ? "text-gain" : "text-loss");
+  const wrEl = document.getElementById("dash_daily_wr");
+  if (wrEl) {
+    wrEl.textContent = wr;
+    if (wr !== "—") wrEl.className = "font-sora text-[28px] font-semibold mt-1 " + (parseInt(wr) >= 50 ? "text-gain" : "text-loss");
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// QUICK TRADE
+// ══════════════════════════════════════════════════════════════════════════
+async function quickTrade() {
+  const sym = (document.getElementById("qt_symbol").value || "").toUpperCase().trim();
+  const side = document.getElementById("qt_side").value;
+  const qty = parseInt(document.getElementById("qt_qty").value) || 1;
+  const price = parseFloat(document.getElementById("qt_price").value) || null;
+  if (!sym) { toast("Enter a symbol"); return; }
+  if (!confirm(`${side} ${qty}x ${sym}${price ? " @ $" + price.toFixed(2) : " at MARKET"}?\n\nThis sends a real order through the Risk Gate.`)) return;
+  try {
+    const r = await fetch(`${API()}/api/order`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ symbol: sym, side, qty, price, type: price ? "limit" : "market" })
+    });
+    const d = await r.json();
+    if (d.ok || d.order_id) { toast(`Order sent: ${side} ${qty}x ${sym}`); playTradeSound("entry"); }
+    else { toast(d.error || "Order rejected"); }
+  } catch (e) { toast("Order failed: " + e.message); }
+}
 </script>
 
 </body>
