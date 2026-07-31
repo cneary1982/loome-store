@@ -41,15 +41,40 @@ const spacer = (after = 200) =>
 // approximation of it. Drawn at 4x in make_letterhead.py, ~300 dpi here.
 // The band is authored at exactly the 488 pt content measure of this page.
 const BAND_PT_W = 488.0;
-const BAND_ASPECT = 10.59375;              // width / height, from band.pdf
 const PX = 96.0 / 72.0;                    // docx image units are px @ 96 dpi
+
+// ---- Which brand this letter is issued under -----------------------
+// Two identities live in this repo, so the letter is parameterised rather
+// than hard-coded. Override with env vars; defaults to Loomi.
+//   BRAND=loome node make_letter.js
+const BRANDS = {
+  loomi: {
+    company: 'Loomi, Inc.',
+    site: 'loomi.ai',
+    email: '[email@loomi.ai]',
+    band: 'band-1.png',
+    aspect: 10.59375,                      // width / height, from band.pdf
+    out: 'Loomi-Employment-Verification-Letter.docx',
+  },
+  loome: {
+    company: 'LOOME Inc.',
+    site: 'loome.com',
+    email: '[email@loome.com]',
+    band: 'loome-band-1.png',
+    aspect: 10.60870,                      // from loome-band.pdf
+    out: 'LOOME-Employment-Verification-Letter.docx',
+  },
+};
+const B = BRANDS[(process.env.BRAND || 'loomi').toLowerCase()];
+if (!B) throw new Error(`unknown BRAND: ${process.env.BRAND}`);
+const BAND_ASPECT = B.aspect;
 
 const band = new Paragraph({
   spacing: { after: 60 },
   children: [
     new ImageRun({
       type: 'png',
-      data: fs.readFileSync('band-1.png'),
+      data: fs.readFileSync(B.band),
       transformation: {
         width: BAND_PT_W * PX,
         height: (BAND_PT_W / BAND_ASPECT) * PX,
@@ -61,7 +86,7 @@ const band = new Paragraph({
 const contactLine = new Paragraph({
   spacing: { after: 230 },
   children: [
-    t('[Street Address]  ·  [City, State ZIP]     [Phone]     [email@loomi.ai]     loomi.ai', {
+    t(`[Street Address]  ·  [City, State ZIP]     [Phone]     ${B.email}     ${B.site}`, {
       size: 16, color: MUTED,
     }),
   ],
@@ -91,7 +116,7 @@ const children = [
   body([
     t('This letter serves to confirm that '),
     t('[EMPLOYEE FULL LEGAL NAME]', { bold: true }),
-    t(' is currently employed by Loomi, Inc. (the “Company”) and is an active employee in good standing as of the date of this letter. This confirmation is provided at the employee’s request in connection with an insurance application or review.'),
+    t(` is currently employed by ${B.company} (the “Company”) and is an active employee in good standing as of the date of this letter. This confirmation is provided at the employee’s request in connection with an insurance application or review.`),
   ]),
 
   // 2. Employment details
@@ -136,7 +161,7 @@ const children = [
 
   // 6. Verification contact
   body([
-    t('Should you require additional information or wish to verify this letter, please contact me directly at [PHONE] or [email@loomi.ai]. We are glad to complete any verification form you require.'),
+    t(`Should you require additional information or wish to verify this letter, please contact me directly at [PHONE] or ${B.email}. We are glad to complete any verification form you require.`),
   ], { after: 260 }),
 
   // Sign-off
@@ -153,11 +178,11 @@ const children = [
   }),
   new Paragraph({
     spacing: { after: 20, line: 250 },
-    children: [t('Loomi, Inc.')],
+    children: [t(B.company)],
   }),
   new Paragraph({
     spacing: { after: 20, line: 250 },
-    children: [t('[PHONE]  ·  [email@loomi.ai]')],
+    children: [t(`[PHONE]  ·  ${B.email}`)],
   }),
 ];
 
@@ -169,7 +194,7 @@ const footer = new Footer({
       border: { top: { style: BorderStyle.SINGLE, size: 6, color: 'D8DAE5', space: 6 } },
       alignment: AlignmentType.CENTER,
       children: [
-        t('Loomi, Inc.  ·  [Street Address], [City, State ZIP]  ·  loomi.ai', { size: 15, color: MUTED }),
+        t(`${B.company}  ·  [Street Address], [City, State ZIP]  ·  ${B.site}`, { size: 15, color: MUTED }),
       ],
     }),
     new Paragraph({
@@ -183,9 +208,9 @@ const footer = new Footer({
 
 // ---- Document ------------------------------------------------------
 const doc = new Document({
-  creator: 'Loomi, Inc.',
+  creator: B.company,
   title: 'Employment Verification Letter',
-  description: 'Verification of employment issued on Loomi, Inc. letterhead',
+  description: `Verification of employment issued on ${B.company} letterhead`,
   sections: [{
     properties: {
       page: {
@@ -199,6 +224,6 @@ const doc = new Document({
 });
 
 Packer.toBuffer(doc).then((buf) => {
-  fs.writeFileSync('Loomi-Employment-Verification-Letter.docx', buf);
-  console.log('wrote Loomi-Employment-Verification-Letter.docx');
+  fs.writeFileSync(B.out, buf);
+  console.log('wrote', B.out);
 });
