@@ -1,0 +1,498 @@
+//@version=6
+// ============================================================
+// STRATEGY: PO3 — 10:00 / 14:00 ET 4H Candle Open
+// Version:  v1
+// Instrument: MNQ / NQ / MES / ES / GC (futures); SPY/QQQ/GLD also work
+// Timeframe:  1m–5m (5m recommended; the model needs intrabar resolution)
+// Session:    the 4H candles that open 10:00 ET and 14:00 ET
+//
+// Accumulation -> Manipulation -> Distribution.
+// Bias is stacked from higher-timeframe confluences; the 14:00 window stays
+// locked unless the session has already proved itself a big day.
+//
+// AUTOMATION STACK: TradingView -> TradersPost -> Tradovate
+// - Recalculate: Bar Close ONLY (never on every tick)
+// - TradersPost: Allow Add to Position = OFF (CRITICAL)
+// - Tradovate:   Bracket orders, $0.62/contract commission
+// - Max open trades: 1 at a time
+// ============================================================
+strategy("PO3 10/2 [v6]",
+     overlay              = true,
+     max_bars_back        = 500,
+     default_qty_type     = strategy.fixed,
+     default_qty_value    = 1,
+     commission_type      = strategy.commission.cash_per_contract,
+     commission_value     = 0.62,
+     slippage             = 1,
+     calc_on_every_tick   = false,
+     process_orders_on_close = true)
+
+// ─── Inputs ─────────────────────────────────────────────────────────────────
+grpW = "Windows"
+useAM       = input.bool(true,  "Trade 10:00 ET candle",       group = grpW)
+usePM       = input.bool(true,  "Trade 14:00 ET candle",       group = grpW)
+flatMinPM   = input.int(960,    "Force flat (NY min of day)",  group = grpW,
+     tooltip = "960 = 16:00 ET. Use 1080 for a 24h futures run.")
+
+grpB = "Bias stack"
+biasMinScore = input.float(2.0, "Min |bias score| to trade",   group = grpB,
+     tooltip = "Six confluences each vote -1/0/+1. Below this the day is a no-trade day.")
+wStructure  = input.float(1.0,  "Weight: HTF structure HH/LL", group = grpB)
+wPdArray    = input.float(1.0,  "Weight: HTF PD array",        group = grpB)
+wOlhc       = input.float(1.0,  "Weight: daily OLHC",          group = grpB)
+wErlIrl     = input.float(1.0,  "Weight: ERL <-> IRL",         group = grpB)
+wProfile    = input.float(1.0,  "Weight: Asia/London profile", group = grpB)
+wCisd       = input.float(1.0,  "Weight: HTF CISD",            group = grpB)
+htfA        = input.timeframe("60",  "Bias TF #1",             group = grpB)
+htfB        = input.timeframe("240", "Bias TF #2",             group = grpB)
+
+grpE = "Entry model"
+accumMin    = input.int(30,   "Accumulation minutes",          group = grpE, minval = 5)
+minConfs    = input.int(2,    "Confirmations required",        group = grpE, minval = 1, maxval = 3)
+reqFvgTap   = input.bool(true,"Sweep must tap a recent 15m FVG",group = grpE)
+fvgLookback = input.int(24,   "15m FVG lookback (bars)",       group = grpE)
+maxManipBars= input.int(24,   "Max bars to find the sweep",    group = grpE)
+maxConfBars = input.int(24,   "Max bars to confirm",           group = grpE)
+
+grpR = "Risk"
+atrLen      = input.int(14,   "ATR length",                    group = grpR)
+stopBufAtr  = input.float(0.10,"Stop buffer (xATR past wick)", group = grpR)
+minRR       = input.float(2.0,"Minimum R:R to take",           group = grpR)
+targetMode  = input.string("PDH/PDL", "Target", options = ["PDH/PDL", "Fixed R"], group = grpR)
+rrTarget    = input.float(3.0,"Fixed R target",                group = grpR)
+trimPct     = input.float(0.0,"Trim % at trim R (0 = off)",    group = grpR, minval = 0, maxval = 100,
+     tooltip = "The Bible trims 80% at 2R and moves the rest to breakeven.")
+trimR       = input.float(2.0,"Trim at R",                     group = grpR)
+
+grpG = "Day gate"
+skipMonday  = input.bool(false, "Skip Mondays",                group = grpG)
+amMaxOnAtr  = input.float(1.50, "AM: max overnight range xATR",group = grpG)
+amMaxGapAtr = input.float(1.25, "AM: max gap xATR",            group = grpG)
+pmBigDayAtr = input.float(0.75, "PM: min 09:30-14:00 range xATR", group = grpG,
+     tooltip = "The 14:00 candle only unlocks once the day has already expanded.")
+pmOnlyIfAmFlat = input.bool(true, "PM only if 10:00 didn't trade", group = grpG)
+
+grpV = "Visuals"
+showZones   = input.bool(true, "Shade accumulation / manipulation", group = grpV)
+showLevels  = input.bool(true, "Plot 4H open, stop, target",        group = grpV)
+
+// ─── Clock ──────────────────────────────────────────────────────────────────
+TZ      = "America/New_York"
+nyMin   = hour(time, TZ) * 60 + minute(time, TZ)
+nyDow   = dayofweek(time, TZ)
+newDay  = ta.change(time("D")) != 0
+
+AM_OPEN = 600     // 10:00 ET
+PM_OPEN = 840     // 14:00 ET
+
+atrV = ta.atr(atrLen)
+
+// ─── Daily / prior-day levels ───────────────────────────────────────────────
+dOpen = request.security(syminfo.tickerid, "D", open,     lookahead = barmerge.lookahead_off)
+pdh   = request.security(syminfo.tickerid, "D", high[1],  lookahead = barmerge.lookahead_off)
+pdl   = request.security(syminfo.tickerid, "D", low[1],   lookahead = barmerge.lookahead_off)
+
+// Running day extremes, and which one printed first (the daily OLHC read).
+var float dayHi = na
+var float dayLo = na
+var int   dayHiBar = na
+var int   dayLoBar = na
+if newDay
+    dayHi := high
+    dayLo := low
+    dayHiBar := bar_index
+    dayLoBar := bar_index
+else
+    if high > dayHi
+        dayHi := high
+        dayHiBar := bar_index
+    if low < dayLo
+        dayLo := low
+        dayLoBar := bar_index
+
+// Overnight (pre-09:30) range and the gap, for the AM gate.
+var float onHi = na
+var float onLo = na
+var float rthOpen = na
+if newDay
+    onHi := na
+    onLo := na
+    rthOpen := na
+if nyMin < 570
+    onHi := na(onHi) ? high : math.max(onHi, high)
+    onLo := na(onLo) ? low  : math.min(onLo, low)
+if na(rthOpen) and nyMin >= 570
+    rthOpen := open
+
+// Range built between the RTH open and the 14:00 candle — the big-day test.
+var float amHi = na
+var float amLo = na
+if newDay
+    amHi := na
+    amLo := na
+if nyMin >= 570 and nyMin < PM_OPEN
+    amHi := na(amHi) ? high : math.max(amHi, high)
+    amLo := na(amLo) ? low  : math.min(amLo, low)
+
+prevClose = request.security(syminfo.tickerid, "D", close[1], lookahead = barmerge.lookahead_off)
+onRangeAtr = (na(onHi) or na(onLo) or na(atrV) or atrV <= 0) ? na : (onHi - onLo) / atrV
+gapAtr     = (na(rthOpen) or na(prevClose) or na(atrV) or atrV <= 0) ? na : math.abs(rthOpen - prevClose) / atrV
+bigDayAtr  = (na(amHi) or na(amLo) or na(atrV) or atrV <= 0) ? na : (amHi - amLo) / atrV
+
+// ─── Asia / London profile ──────────────────────────────────────────────────
+// Asia 18:00-02:00 ET, London 02:00-05:00 ET. On an RTH-only feed these stay
+// na and the confluence simply votes 0 — same as the Python engine.
+var float asiaHi = na
+var float asiaLo = na
+var float lonHi  = na
+var float lonLo  = na
+var float profileVote = 0.0
+
+newAsia = nyMin >= 1080 and nyMin[1] < 1080
+if newAsia                             // 18:00 — a fresh Asia session begins
+    asiaHi := high
+    asiaLo := low
+    lonHi := na
+    lonLo := na
+    profileVote := 0.0
+else if nyMin >= 1080
+    asiaHi := na(asiaHi) ? high : math.max(asiaHi, high)
+    asiaLo := na(asiaLo) ? low  : math.min(asiaLo, low)
+if nyMin < 120                         // through 02:00 ET Asia keeps building
+    asiaHi := na(asiaHi) ? high : math.max(asiaHi, high)
+    asiaLo := na(asiaLo) ? low  : math.min(asiaLo, low)
+if nyMin >= 120 and nyMin < 300        // London
+    lonHi := na(lonHi) ? high : math.max(lonHi, high)
+    lonLo := na(lonLo) ? low  : math.min(lonLo, low)
+if nyMin >= 300 and not na(asiaHi) and not na(lonHi)
+    up = lonHi > asiaHi
+    dn = lonLo < asiaLo
+    profileVote := up and not dn ? 1.0 : (dn and not up ? -1.0 : 0.0)
+
+// ─── HTF confluences ────────────────────────────────────────────────────────
+f_structure() =>
+    ph = ta.pivothigh(high, 2, 2)
+    pl = ta.pivotlow(low, 2, 2)
+    var float h1 = na
+    var float h2 = na
+    var float l1 = na
+    var float l2 = na
+    if not na(ph)
+        h2 := h1
+        h1 := ph
+    if not na(pl)
+        l2 := l1
+        l1 := pl
+    hh = h1 > h2
+    hl = l1 > l2
+    (na(h2) or na(l2)) ? 0 : (hh and hl ? 1 : (not hh and not hl ? -1 : 0))
+
+f_pdArray() =>
+    var float bullTop = na
+    var float bullBot = na
+    var float bearTop = na
+    var float bearBot = na
+    if low > high[2]
+        bullTop := low
+        bullBot := high[2]
+    if high < low[2]
+        bearTop := low[2]
+        bearBot := high
+    if not na(bullBot) and low <= bullBot          // bullish gap fully filled
+        bullTop := na
+        bullBot := na
+    if not na(bearTop) and high >= bearTop         // bearish gap fully filled
+        bearTop := na
+        bearBot := na
+    bullLive = not na(bullTop) and close > bullTop
+    bearLive = not na(bearBot) and close < bearBot
+    dBull = bullLive ? close - bullTop : na
+    dBear = bearLive ? bearBot - close : na
+    bullLive and bearLive ? (dBull <= dBear ? 1 : -1) : (bullLive ? 1 : (bearLive ? -1 : 0))
+
+f_cisd() =>
+    var float downOpen = na
+    var float upOpen = na
+    if close < open
+        downOpen := (close[1] < open[1]) ? downOpen : open
+    if close > open
+        upOpen := (close[1] > open[1]) ? upOpen : open
+    (not na(downOpen) and close > downOpen) ? 1 : ((not na(upOpen) and close < upOpen) ? -1 : 0)
+
+structA = request.security(syminfo.tickerid, htfA, f_structure()[1], lookahead = barmerge.lookahead_off)
+structB = request.security(syminfo.tickerid, htfB, f_structure()[1], lookahead = barmerge.lookahead_off)
+pdA     = request.security(syminfo.tickerid, htfA, f_pdArray()[1],   lookahead = barmerge.lookahead_off)
+pdB     = request.security(syminfo.tickerid, htfB, f_pdArray()[1],   lookahead = barmerge.lookahead_off)
+cisdA   = request.security(syminfo.tickerid, htfA, f_cisd()[1],      lookahead = barmerge.lookahead_off)
+cisdB   = request.security(syminfo.tickerid, htfB, f_cisd()[1],      lookahead = barmerge.lookahead_off)
+
+structVote = math.sign(nz(structA) + nz(structB))
+pdVote     = math.sign(nz(pdA) + nz(pdB))
+cisdVote   = math.sign(nz(cisdA) + nz(cisdB))
+
+olhcVote = (not na(dOpen) and close > dOpen and dayLoBar < dayHiBar) ? 1 :
+     ((not na(dOpen) and close < dOpen and dayHiBar < dayLoBar) ? -1 : 0)
+
+erlVote = 0
+if not na(pdh) and not na(pdl) and pdh > pdl
+    tookHigh = dayHi > pdh
+    tookLow  = dayLo < pdl
+    eq = (pdh + pdl) / 2.0
+    erlVote := tookHigh and not tookLow ? -1 : (tookLow and not tookHigh ? 1 : (close < eq ? 1 : -1))
+
+biasScore = wStructure * structVote + wPdArray * pdVote + wOlhc * olhcVote +
+     wErlIrl * erlVote + wProfile * profileVote + wCisd * cisdVote
+biasDir = biasScore >= biasMinScore ? 1 : (biasScore <= -biasMinScore ? -1 : 0)
+
+// ─── 15m fair value gaps (the pools the wick should reach into) ─────────────
+[h15_3, l15_3, h15_1, l15_1] = request.security(syminfo.tickerid, "15",
+     [high[3], low[3], high[1], low[1]], lookahead = barmerge.lookahead_off)
+
+var float f15BullTop = na
+var float f15BullBot = na
+var int   f15BullBar = na
+var float f15BearTop = na
+var float f15BearBot = na
+var int   f15BearBar = na
+
+newBull15 = not na(l15_1) and not na(h15_3) and l15_1 > h15_3
+newBear15 = not na(h15_1) and not na(l15_3) and h15_1 < l15_3
+if newBull15 and (na(f15BullTop) or l15_1 != f15BullTop or h15_3 != f15BullBot)
+    f15BullTop := l15_1
+    f15BullBot := h15_3
+    f15BullBar := bar_index
+if newBear15 and (na(f15BearTop) or l15_3 != f15BearTop or h15_1 != f15BearBot)
+    f15BearTop := l15_3
+    f15BearBot := h15_1
+    f15BearBar := bar_index
+if not na(f15BullBot) and low <= f15BullBot
+    f15BullTop := na
+    f15BullBot := na
+if not na(f15BearTop) and high >= f15BearTop
+    f15BearTop := na
+    f15BearBot := na
+
+// A 15m gap is "recent" while it is inside the lookback, measured in 15m bars.
+barsPer15 = math.max(1, math.round(15.0 / math.max(1, timeframe.in_seconds(timeframe.period) / 60)))
+bullFresh = not na(f15BullTop) and (bar_index - f15BullBar) <= fvgLookback * barsPer15
+bearFresh = not na(f15BearTop) and (bar_index - f15BearBar) <= fvgLookback * barsPer15
+
+// ─── Chart-timeframe FVG + CISD (entry confirmations) ───────────────────────
+var float legBearTop = na      // bearish gap inside a long's manipulation leg
+var float legBullBot = na      // bullish gap inside a short's manipulation leg
+var float downRunOpen = na
+var float upRunOpen   = na
+if close < open
+    downRunOpen := (close[1] < open[1]) ? downRunOpen : open
+if close > open
+    upRunOpen := (close[1] > open[1]) ? upRunOpen : open
+
+// ─── PO3 window state machine ───────────────────────────────────────────────
+var int    winHour   = na       // 10 or 14 while a window is live
+var float  winOpen   = na       // the 4H candle's opening price
+var float  accHi     = na
+var float  accLo     = na
+var int    winOpenBar = na
+var bool   accDone   = false
+var bool   swept     = false
+var bool   tapped    = false
+var float  manipExt  = na
+var int    manipBar  = na
+var int    sweepBar  = na
+var bool   amTraded  = false
+var bool   dayTraded = false
+var int    winBias   = 0
+
+if newDay
+    amTraded  := false
+    dayTraded := false
+    winHour   := na
+
+atOpen(int mins) => nyMin >= mins and nyMin[1] < mins and nyMin[1] >= 0
+
+// Gate the two windows.
+calendarOk = not (skipMonday and nyDow == dayofweek.monday)
+amGateOk = useAM and calendarOk and
+     (na(onRangeAtr) or onRangeAtr <= amMaxOnAtr) and
+     (na(gapAtr) or gapAtr <= amMaxGapAtr)
+pmGateOk = usePM and calendarOk and
+     (not pmOnlyIfAmFlat or not amTraded) and
+     (not na(bigDayAtr) and bigDayAtr >= pmBigDayAtr)
+
+// Inlined on purpose: Pine does not allow a user-defined function to assign to
+// a global, so this cannot be factored into a startWindow() helper.
+amStart = atOpen(AM_OPEN) and amGateOk and not dayTraded
+pmStart = atOpen(PM_OPEN) and pmGateOk and not dayTraded
+
+if amStart or pmStart
+    winHour    := amStart ? 10 : 14
+    winOpen    := open
+    winOpenBar := bar_index
+    accHi      := high
+    accLo      := low
+    accDone    := false
+    swept      := false
+    tapped     := false
+    manipExt   := na
+    manipBar   := na
+    sweepBar   := na
+    legBearTop := na
+    legBullBot := na
+    winBias    := biasDir
+
+windowLive = not na(winHour) and not dayTraded and
+     (winHour == 10 ? nyMin < PM_OPEN : nyMin < flatMinPM)
+if not na(winHour) and not windowLive
+    winHour := na
+
+// Phase 1 — accumulation.
+if windowLive and not accDone
+    if nyMin < (winHour * 60 + accumMin)
+        accHi := math.max(accHi, high)
+        accLo := math.min(accLo, low)
+    else
+        accDone := true
+
+// Phase 2/3 — manipulation, then distribution.
+longSetup  = windowLive and accDone and winBias ==  1
+shortSetup = windowLive and accDone and winBias == -1
+
+if longSetup or shortSetup
+    if longSetup
+        if low < accLo
+            if not swept
+                sweepBar := bar_index
+            swept := true
+            if na(manipExt) or low < manipExt
+                manipExt := low
+                manipBar := bar_index
+                legBearTop := na
+        if bullFresh and low <= f15BullTop
+            tapped := true
+        // Track the bearish gap printed inside the leg — the IFVG candidate.
+        if high < low[2]
+            legBearTop := low[2]
+    else
+        if high > accHi
+            if not swept
+                sweepBar := bar_index
+            swept := true
+            if na(manipExt) or high > manipExt
+                manipExt := high
+                manipBar := bar_index
+                legBullBot := na
+        if bearFresh and high >= f15BearBot
+            tapped := true
+        if low > high[2]
+            legBullBot := low
+
+// ─── Entry ──────────────────────────────────────────────────────────────────
+manipAged   = not na(manipBar) and bar_index > manipBar
+sweepInTime = not na(sweepBar) and (sweepBar - winOpenBar) <= maxManipBars
+confInTime  = not na(manipBar) and (bar_index - manipBar) <= maxConfBars
+tapOk       = not reqFvgTap or tapped
+
+confLong  = (not na(legBearTop) and close > legBearTop ? 1 : 0) +
+     (not na(downRunOpen) and close > downRunOpen ? 1 : 0) +
+     (not na(winOpen) and close > winOpen ? 1 : 0)
+confShort = (not na(legBullBot) and close < legBullBot ? 1 : 0) +
+     (not na(upRunOpen) and close < upRunOpen ? 1 : 0) +
+     (not na(winOpen) and close < winOpen ? 1 : 0)
+
+buf      = stopBufAtr * atrV
+longStop  = manipExt - buf
+shortStop = manipExt + buf
+longRisk  = close - longStop
+shortRisk = shortStop - close
+
+longTgt  = targetMode == "PDH/PDL" ? pdh : close + rrTarget * longRisk
+shortTgt = targetMode == "PDH/PDL" ? pdl : close - rrTarget * shortRisk
+longRR   = (not na(longTgt)  and longRisk  > 0) ? (longTgt - close) / longRisk   : na
+shortRR  = (not na(shortTgt) and shortRisk > 0) ? (close - shortTgt) / shortRisk : na
+
+goLong = longSetup and swept and tapOk and manipAged and sweepInTime and confInTime and
+     confLong >= minConfs and longRisk > 0 and not na(longRR) and longRR >= minRR and
+     strategy.opentrades == 0 and not dayTraded
+goShort = shortSetup and swept and tapOk and manipAged and sweepInTime and confInTime and
+     confShort >= minConfs and shortRisk > 0 and not na(shortRR) and shortRR >= minRR and
+     strategy.opentrades == 0 and not dayTraded
+
+var float entryPx = na
+var float curStop = na
+var float curTgt  = na
+
+if goLong
+    entryPx := close
+    curStop := longStop
+    curTgt  := longTgt
+    dayTraded := true
+    amTraded := winHour == 10 ? true : amTraded
+    strategy.entry("Long", strategy.long)
+    if trimPct > 0
+        strategy.exit("Trim L", "Long", qty_percent = trimPct,
+             limit = entryPx + trimR * longRisk, stop = curStop)
+        strategy.exit("Exit L", "Long", stop = curStop, limit = curTgt)
+    else
+        strategy.exit("Exit L", "Long", stop = curStop, limit = curTgt)
+    alert('{"action":"buy","sentiment":"long","quantity":"1"}', alert.freq_once_per_bar)
+
+if goShort
+    entryPx := close
+    curStop := shortStop
+    curTgt  := shortTgt
+    dayTraded := true
+    amTraded := winHour == 10 ? true : amTraded
+    strategy.entry("Short", strategy.short)
+    if trimPct > 0
+        strategy.exit("Trim S", "Short", qty_percent = trimPct,
+             limit = entryPx - trimR * shortRisk, stop = curStop)
+        strategy.exit("Exit S", "Short", stop = curStop, limit = curTgt)
+    else
+        strategy.exit("Exit S", "Short", stop = curStop, limit = curTgt)
+    alert('{"action":"sell","sentiment":"short","quantity":"1"}', alert.freq_once_per_bar)
+
+// ─── Forced flat at the end of the 4H window ────────────────────────────────
+pastFlat = (winHour == 10 and nyMin >= PM_OPEN) or nyMin >= flatMinPM
+if strategy.opentrades > 0 and pastFlat
+    strategy.close_all(comment = "Window End")
+    alert('{"action":"exit","sentiment":"flat","quantity":"1"}', alert.freq_once_per_bar)
+
+// ─── Visuals ────────────────────────────────────────────────────────────────
+plot(showLevels and windowLive ? winOpen : na, "4H open", color.new(color.yellow, 0),
+     style = plot.style_linebr, linewidth = 2)
+plot(showLevels and strategy.opentrades > 0 ? curStop : na, "Stop",
+     color.new(color.red, 0), style = plot.style_linebr)
+plot(showLevels and strategy.opentrades > 0 ? curTgt : na, "Target",
+     color.new(color.lime, 0), style = plot.style_linebr)
+plot(showLevels ? pdh : na, "PDH", color.new(color.gray, 40), style = plot.style_linebr)
+plot(showLevels ? pdl : na, "PDL", color.new(color.gray, 40), style = plot.style_linebr)
+
+bgcolor(showZones and windowLive and not accDone ? color.new(color.teal, 88) : na,
+     title = "Accumulation")
+bgcolor(showZones and windowLive and accDone and swept and strategy.opentrades == 0
+     ? color.new(color.maroon, 88) : na, title = "Manipulation")
+
+plotshape(goLong,  "Long",  shape.triangleup,   location.belowbar, color.lime, size = size.small)
+plotshape(goShort, "Short", shape.triangledown, location.abovebar, color.red,  size = size.small)
+
+// ─── Bias readout ───────────────────────────────────────────────────────────
+var table tbl = table.new(position.top_right, 2, 8, border_width = 1)
+if barstate.islast
+    table.cell(tbl, 0, 0, "PO3 bias", text_color = color.white, bgcolor = color.new(color.blue, 40))
+    table.cell(tbl, 1, 0, str.tostring(biasScore, "#.#") + " -> " +
+         (biasDir == 1 ? "LONG" : biasDir == -1 ? "SHORT" : "none"),
+         text_color = color.white, bgcolor = color.new(color.blue, 40))
+    table.cell(tbl, 0, 1, "structure")
+    table.cell(tbl, 1, 1, str.tostring(structVote))
+    table.cell(tbl, 0, 2, "PD array")
+    table.cell(tbl, 1, 2, str.tostring(pdVote))
+    table.cell(tbl, 0, 3, "daily OLHC")
+    table.cell(tbl, 1, 3, str.tostring(olhcVote))
+    table.cell(tbl, 0, 4, "ERL/IRL")
+    table.cell(tbl, 1, 4, str.tostring(erlVote))
+    table.cell(tbl, 0, 5, "profile")
+    table.cell(tbl, 1, 5, str.tostring(profileVote))
+    table.cell(tbl, 0, 6, "HTF CISD")
+    table.cell(tbl, 1, 6, str.tostring(cisdVote))
+    table.cell(tbl, 0, 7, "big day xATR")
+    table.cell(tbl, 1, 7, str.tostring(nz(bigDayAtr), "#.##"))

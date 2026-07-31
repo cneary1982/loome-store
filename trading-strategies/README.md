@@ -54,6 +54,15 @@ trading-strategies/
 ├── strategy.py                        signal logic factored for streaming
 ├── process_databento.py               raw Databento → continuous front-month CSVs
 │
+│ PO3 — the 10:00 / 14:00 ET 4H candle open model (see PO3.md)
+├── PO3.md                             step-by-step guide + results
+├── po3/                               bias stack, day gate, entry model, reports
+├── po3_backtest.py                    PO3 backtest CLI
+├── po3_sweep.py                       PO3 parameter sweep with IS/OOS split
+├── pine/PO3_10_2.pine                 TradingView v6 strategy
+├── tools/pinecheck.py                 Pine v6 linter (syntax + automation rules)
+├── tests/test_po3.py                  primitives + no-lookahead tests
+│
 │ Live-trading path (Tradier; ETF proxies SPY / QQQ / GLD)
 ├── tradier.py                         REST client (sandbox + live)
 ├── live_trader.py                     single-strategy runner (simple path)
@@ -75,6 +84,29 @@ trading-strategies/
     ├── sweep_all.csv
     └── best_per_cell_by_total_R.csv
 ```
+
+## PO3 — the 10:00 / 14:00 ET 4H candle open
+
+A second, independent strategy lives alongside the regime model: **PO3**
+(Accumulation → Manipulation → Distribution) on the 4-hour candles that open at
+10:00 and 14:00 ET.
+
+Direction comes from a stacked higher-timeframe bias (HTF PD arrays, HH/LL
+structure, daily OLHC, ERL⇄IRL, Asia/London profile, HTF CISD); entry needs at
+least two of the three confirmations (IFVG, CISD, reclaim of the 4H open); the
+stop sits behind the manipulation wick and the target is the previous day's
+high/low. The 14:00 window stays gated off unless the day has already proved
+itself.
+
+```bash
+python po3_backtest.py                       # all datasets, defaults
+python po3_sweep.py --jobs 4                 # parameter grid, IS/OOS split
+python tests/test_po3.py                     # incl. a lookahead check
+python tools/pinecheck.py pine/PO3_10_2.pine # lint the TradingView strategy
+```
+
+Full walkthrough, correctness notes, data limitations and results:
+**[PO3.md](PO3.md)**.
 
 ## Multi-strategy orchestrator (recommended)
 

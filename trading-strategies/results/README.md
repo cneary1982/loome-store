@@ -52,3 +52,34 @@ Open ideas to try (PRs welcome):
 - **Volatility-targeted sizing**: risk constant $ per trade by sizing 1/ATR.
 - **New session windows**: add a preset to `SESSION_PRESETS` in `sweep_all.py` and it will be tested automatically for the symbols it's listed under in `SESSION_VARIANTS`.
 - **Volume confirmation**: only fire entries when the breakout bar's volume is N x median(volume).
+
+---
+
+# PO3 outputs
+
+| File | What it is |
+|---|---|
+| `po3_findings.md` | The read-out: what the grid says about the PO3 model, including what didn't work |
+| `po3_sweep.csv` | Full grid from `python po3_sweep.py` — 216 configs x 4 instruments |
+| `po3_trades_robust.csv` | Trade-by-trade log from `python po3_backtest.py --preset robust` |
+
+## `po3_sweep.csv` columns
+
+Config: `dataset`, `hours` (which 4H opens), `bias_min_score`, `min_confs`,
+`require_fvg_tap`, `accum_minutes`, `target_mode`, `min_rr`, `fvg_lookback`,
+`pm_big_day_range_atr`, `min_stop_atr`.
+
+Results: `trades`, `win_rate`, `total_R`, `avg_R`, then the same four prefixed
+`is_` (first 60% of the span) and `oos_` (held-out last 40%). `split_date` is
+where the two halves divide.
+
+A config is only interesting when `is_total_R` and `oos_total_R` are *both*
+positive, on more than one instrument.
+
+## `po3_trades_robust.csv` columns
+
+`dataset`, `ny_date`, `hour` (10 or 14), `side`, `bias_score` (the stacked
+confluence total), `entry_ts`/`entry`, `stop` (behind the manipulation wick),
+`target`, `exit_ts`/`exit`, `r`, `outcome` (`target` / `stop` / `time`),
+`confs` (which confirmations fired), `big_day` (09:30-14:00 range in ATRs),
+`rr` (planned reward:risk at entry).
