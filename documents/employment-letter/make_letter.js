@@ -1,6 +1,6 @@
 const {
   Document, Packer, Paragraph, TextRun, AlignmentType, BorderStyle,
-  Footer, Header, TabStopType, TabStopPosition, Tab,
+  Footer, Header, TabStopType, TabStopPosition, Tab, ImageRun,
 } = require('docx');
 const fs = require('fs');
 
@@ -36,28 +36,26 @@ const spacer = (after = 200) =>
   new Paragraph({ spacing: { after }, children: [t('')] });
 
 // ---- Letterhead ----------------------------------------------------
-const wordmark = new Paragraph({
-  spacing: { after: 40 },
-  children: [
-    new TextRun({ text: 'loomi', font: FONT, size: 48, bold: true, color: INK, characterSpacing: -20 }),
-    new TextRun({ text: '.ai', font: FONT, size: 48, bold: true, color: ACCENT, characterSpacing: -20 }),
-  ],
-});
+// The head — woven mark, wordmark and the two-tone rule — is placed as a
+// single image so the letter carries the real artwork rather than a border
+// approximation of it. Drawn at 4x in make_letterhead.py, ~300 dpi here.
+// The band is authored at exactly the 488 pt content measure of this page.
+const BAND_PT_W = 488.0;
+const BAND_ASPECT = 10.59375;              // width / height, from band.pdf
+const PX = 96.0 / 72.0;                    // docx image units are px @ 96 dpi
 
-const tagline = new Paragraph({
-  spacing: { after: 120 },
+const band = new Paragraph({
+  spacing: { after: 60 },
   children: [
-    t('ARTIFICIAL INTELLIGENCE  ·  CAPITAL  ·  ADVISORY', {
-      size: 14, color: MUTED, caps: true, spacing: 30,
+    new ImageRun({
+      type: 'png',
+      data: fs.readFileSync('band-1.png'),
+      transformation: {
+        width: BAND_PT_W * PX,
+        height: (BAND_PT_W / BAND_ASPECT) * PX,
+      },
     }),
   ],
-});
-
-// Accent rule under the letterhead
-const rule = new Paragraph({
-  spacing: { after: 160 },
-  border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: ACCENT, space: 1 } },
-  children: [t('')],
 });
 
 const contactLine = new Paragraph({
@@ -71,9 +69,7 @@ const contactLine = new Paragraph({
 
 // ---- Letter body ---------------------------------------------------
 const children = [
-  wordmark,
-  tagline,
-  rule,
+  band,
   contactLine,
 
   // Date
