@@ -1,0 +1,60 @@
+// ConnorsRSI2 — Mean-Reversion Strategy
+// Pine Script v6
+// Backtest: +244.5R combined with ORB across SPY/QQQ/GLD (2yr)
+// ConnorsRSI2 alone: +106R (SPY +40, QQQ +16, GLD +50) on 15m
+//
+// Logic:
+//   Long when RSI(2) crosses below 10 AND close > SMA(50)
+//   TP = 2× ATR(14), SL = 1× ATR(14)
+//   Long-only mean-reversion — buys extreme dips in uptrends
+
+//@version=6
+strategy("ConnorsRSI2", overlay=true, default_qty_type=strategy.percent_of_equity,
+         default_qty_value=10, initial_capital=10000, commission_value=0.0,
+         calc_on_every_tick=false)
+
+// ─── Inputs ────────────────────────────────────────────────────────
+rsiLen       = input.int(2,     "RSI Period",         minval=1)
+rsiBuy       = input.float(10,  "RSI Buy Threshold",  minval=1,  maxval=50)
+trendLen     = input.int(50,    "Trend SMA Length",    minval=5)
+useTrend     = input.bool(true, "Use Trend Filter")
+atrLen       = input.int(14,    "ATR Period",          minval=1)
+slMult       = input.float(1.0, "SL × ATR",           minval=0.1, step=0.1)
+tpMult       = input.float(2.0, "TP × ATR",           minval=0.1, step=0.1)
+
+// ─── Time Filter (9:30–13:00 ET entry window) ─────────────────────
+useTimeFilter = input.bool(true, "Use 9:30–13:00 ET Entry Window")
+entryStart    = input.int(930,   "Entry Start (HHMM ET)", minval=0, maxval=2359)
+entryEnd      = input.int(1300,  "Entry End (HHMM ET)",   minval=0, maxval=2359)
+
+nyTime    = timestamp("America/New_York", year, month, dayofmonth, 0, 0)
+nyHour    = hour(time, "America/New_York")
+nyMinute  = minute(time, "America/New_York")
+nyHHMM    = nyHour * 100 + nyMinute
+inWindow  = not useTimeFilter or (nyHHMM >= entryStart and nyHHMM < entryEnd)
+
+// ─── Indicators ────────────────────────────────────────────────────
+rsiVal   = ta.rsi(close, rsiLen)
+trendMA  = ta.sma(close, trendLen)
+atrVal   = ta.atr(atrLen)
+
+// ─── Conditions ────────────────────────────────────────────────────
+uptrend       = not useTrend or close > trendMA
+crossedUnder  = ta.crossunder(rsiVal, rsiBuy)
+longCondition = crossedUnder and uptrend and inWindow
+
+// ─── Entry ─────────────────────────────────────────────────────────
+if longCondition and strategy.position_size == 0
+    sl = close - slMult * atrVal
+    tp = close + tpMult * atrVal
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Exit", "Long", stop=sl, limit=tp)
+
+// ─── Plots ─────────────────────────────────────────────────────────
+plot(trendMA, "Trend SMA", color=color.new(color.orange, 0), linewidth=2)
+
+bgcolor(longCondition ? color.new(color.green, 85) : na)
+
+// RSI panel
+hline(rsiBuy, "RSI Buy Level", color=color.red, linestyle=hline.style_dashed)
+plot(rsiVal, "RSI(2)", color=color.new(color.blue, 0), display=display.pane)

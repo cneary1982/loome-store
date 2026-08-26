@@ -1,0 +1,91 @@
+// Opening Range Breakout (ORB) Strategy
+// Pine Script v6
+// Backtest: +138.5R combined across SPY/QQQ/GLD on 5m (2yr)
+//   QQQ +51.5R | SPY +46R | GLD +41R
+//
+// Logic:
+//   Defines the high/low of the first 30 minutes (9:30–10:00 ET)
+//   Long on first close above range high
+//   Short on first close below range low
+//   One trade per day — suppresses second breakouts
+//   TP = 1.5× range height, SL = range height (opposite side)
+
+//@version=6
+strategy("ORB 30min", overlay=true, default_qty_type=strategy.percent_of_equity,
+         default_qty_value=10, initial_capital=10000, commission_value=0.0,
+         calc_on_every_tick=false)
+
+// ─── Inputs ────────────────────────────────────────────────────────
+rangeMins   = input.int(30,    "Opening Range Minutes",  minval=5, maxval=120)
+tpMult      = input.float(1.5, "TP × Range Height",     minval=0.1, step=0.1)
+cutoffHHMM  = input.int(1530,  "Stop Trading After (HHMM ET)", minval=1000, maxval=1600)
+
+// ─── NY Time ───────────────────────────────────────────────────────
+nyHour   = hour(time, "America/New_York")
+nyMinute = minute(time, "America/New_York")
+nyHHMM   = nyHour * 100 + nyMinute
+
+marketOpen   = nyHHMM >= 930
+rangeEndHHMM = 930 + rangeMins  // e.g. 930 + 30 = 960 → need to handle
+rangeEndH    = (9 * 60 + 30 + rangeMins) / 60
+rangeEndM    = math.round((rangeEndH - math.floor(rangeEndH)) * 60)
+rangeEndCalc = math.floor(rangeEndH) * 100 + rangeEndM
+
+inRange    = marketOpen and nyHHMM < rangeEndCalc
+postRange  = nyHHMM >= rangeEndCalc and nyHHMM < cutoffHHMM
+
+// ─── New Day Detection ─────────────────────────────────────────────
+newDay = ta.change(time("D")) != 0
+
+// ─── Track Opening Range ───────────────────────────────────────────
+var float orHigh       = na
+var float orLow        = na
+var bool  tradedToday  = false
+var bool  rangeSet     = false
+
+if newDay
+    orHigh      := na
+    orLow       := na
+    tradedToday := false
+    rangeSet    := false
+
+if inRange
+    orHigh := na(orHigh) ? high : math.max(orHigh, high)
+    orLow  := na(orLow)  ? low  : math.min(orLow,  low)
+
+if not inRange and not na(orHigh) and not rangeSet
+    rangeSet := true
+
+// ─── Range Height ──────────────────────────────────────────────────
+rangeHeight = orHigh - orLow
+validRange  = rangeSet and not na(rangeHeight) and rangeHeight > 0
+
+// ─── Entry Conditions ──────────────────────────────────────────────
+longBreak  = validRange and postRange and not tradedToday and close > orHigh
+shortBreak = validRange and postRange and not tradedToday and close < orLow
+
+// ─── Entries ───────────────────────────────────────────────────────
+if longBreak and strategy.position_size == 0
+    tp = close + tpMult * rangeHeight
+    sl = close - rangeHeight
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Exit Long", "Long", stop=sl, limit=tp)
+    tradedToday := true
+
+if shortBreak and strategy.position_size == 0
+    tp = close - tpMult * rangeHeight
+    sl = close + rangeHeight
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Exit Short", "Short", stop=sl, limit=tp)
+    tradedToday := true
+
+// ─── Plots ─────────────────────────────────────────────────────────
+orHighLine = plot(rangeSet ? orHigh : na, "OR High", color=color.new(color.green, 30),
+                  linewidth=2, style=plot.style_stepline_diamond)
+orLowLine  = plot(rangeSet ? orLow : na,  "OR Low",  color=color.new(color.red, 30),
+                  linewidth=2, style=plot.style_stepline_diamond)
+fill(orHighLine, orLowLine, color=color.new(color.blue, 90))
+
+bgcolor(inRange ? color.new(color.yellow, 90) : na)
+plotshape(longBreak,  "Long Signal",  shape.triangleup,   location.belowbar, color.green, size=size.small)
+plotshape(shortBreak, "Short Signal", shape.triangledown, location.abovebar, color.red,   size=size.small)
