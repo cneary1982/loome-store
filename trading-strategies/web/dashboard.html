@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>Dashboard · Loomi.AI</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="_tailwind.js"></script>
+<style>
+  body{background:#f9f9f9;color:#1a1c1c;font-family:Inter,sans-serif}
+  .material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400}
+</style>
+</head>
+<body>
+<main id="main" class="ml-64 p-margin max-w-7xl"></main>
+<script src="_layout.js"></script>
+<script>
+  renderLayout({ active: "Dashboard", title: "Command Center" });
+
+  const root = document.getElementById("main");
+
+  async function refresh() {
+    const s = await (await fetch("/api/state")).json();
+    const strats = await (await fetch("/api/strategies")).json();
+    const winners = (strats.strategies || [])
+      .filter(x => x.bt_total_R != null)
+      .sort((a, b) => +b.bt_total_R - +a.bt_total_R)
+      .slice(0, 5);
+
+    root.innerHTML = `
+      <!-- Top metrics row -->
+      <div class="grid grid-cols-4 gap-md mb-md">
+        ${metric("Cash Available", fmt.money(s.cash_available), "account_balance")}
+        ${metric("Daily P&L", fmt.money(s.daily_pnl),
+                 s.daily_pnl >= 0 ? "trending_up" : "trending_down",
+                 s.daily_pnl >= 0 ? "text-gain" : "text-loss")}
+        ${metric("Open Positions", s.open_positions.length, "inventory_2")}
+        ${metric("Strategies Active", s.strategies_total + " / 20", "auto_awesome")}
+      </div>
+
+      <!-- Bento: Status + Top backtested -->
+      <div class="grid grid-cols-12 gap-md mb-md">
+        <div class="col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+          <h3 class="font-headline-md text-headline-md mb-md">Orchestrator Status</h3>
+          <div class="grid grid-cols-2 gap-md">
+            <div>
+              <p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Broker</p>
+              <p class="font-data-mono text-data-mono font-bold">${s.broker_env || "—"}</p>
+            </div>
+            <div>
+              <p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Last Tick</p>
+              <p class="font-data-mono text-data-mono font-bold">${fmt.time(s.timestamp)}</p>
+            </div>
+            <div>
+              <p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Max Daily Loss</p>
+              <p class="font-data-mono text-data-mono font-bold">${fmt.money(s.max_daily_loss)}</p>
+            </div>
+            <div>
+              <p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">Today's Trades</p>
+              <p class="font-data-mono text-data-mono font-bold">${s.trades_today}</p>
+            </div>
+          </div>
+          ${s.halted
+            ? `<div class="mt-md p-sm bg-error/10 border border-error/30 rounded-lg text-error">
+                 <p class="font-label-md text-label-md font-bold">HALTED: ${s.halt_reason || "manual"}</p>
+                 <button onclick="clearHalt()" class="mt-sm px-md py-xs bg-error text-on-error rounded font-label-sm">Clear Halt</button>
+               </div>`
+            : ""}
+        </div>
+        <div class="col-span-4 bg-primary text-on-primary rounded-xl p-md flex flex-col">
+          <h3 class="font-label-md text-label-md mb-md opacity-70 uppercase tracking-widest">Top Backtested</h3>
+          <div class="flex-1 space-y-sm">
+            ${winners.map(w => `
+              <div class="flex justify-between items-center border-b border-white/10 py-xs">
+                <div>
+                  <p class="font-data-mono text-data-mono font-bold">${w.symbol} · ${w.timeframe}</p>
+                  <p class="font-label-sm text-label-sm opacity-60">${w.class}</p>
+                </div>
+                <p class="font-data-mono text-data-mono ${(+w.bt_total_R) > 0 ? "text-tertiary-fixed" : "text-loss"}">
+                  ${fmt.signed(w.bt_total_R)} R
+                </p>
+              </div>`).join("")}
+          </div>
+        </div>
+      </div>
+
+      <!-- Open positions -->
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden mb-md">
+        <div class="p-md border-b border-outline-variant flex justify-between">
+          <h4 class="font-label-md text-label-md uppercase tracking-widest">Open Positions</h4>
+          <a href="portfolio.html" class="font-label-sm text-label-sm text-primary">View Portfolio →</a>
+        </div>
+        ${s.open_positions.length === 0
+          ? `<div class="p-md text-on-surface-variant italic">No open positions.</div>`
+          : `<table class="w-full text-left">
+              <thead class="bg-surface-container-low">
+                <tr class="text-on-surface-variant text-[10px] uppercase tracking-widest">
+                  <th class="p-md">Symbol</th><th class="p-md">Strategy</th>
+                  <th class="p-md">Side</th><th class="p-md">Shares</th>
+                  <th class="p-md">Entry</th><th class="p-md">TP/SL</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-outline-variant/20">
+                ${s.open_positions.map(p => `
+                  <tr>
+                    <td class="p-md font-bold">${p.symbol}</td>
+                    <td class="p-md font-label-sm text-label-sm text-on-surface-variant">${p.strategy}</td>
+                    <td class="p-md">
+                      <span class="${p.side === "long" ? "bg-gain/10 text-gain" : "bg-loss/10 text-loss"}
+                        px-xs py-[2px] rounded font-label-sm font-bold">${(p.side || "").toUpperCase()}</span>
+                    </td>
+                    <td class="p-md font-data-mono">${p.shares}</td>
+                    <td class="p-md font-data-mono">${fmt.num(p.entry)}</td>
+                    <td class="p-md font-data-mono text-label-sm">
+                      <span class="text-gain">${fmt.num(p.tp)}</span> /
+                      <span class="text-loss">${fmt.num(p.sl)}</span>
+                    </td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>`}
+      </div>
+    `;
+  }
+
+  window.clearHalt = async () => {
+    await fetch("/api/clear_halt", { method: "POST" });
+    refresh();
+  };
+
+  function metric(label, val, icon, color = "") {
+    return `
+      <div class="bg-surface-container-lowest p-md rounded-xl border border-outline-variant/40">
+        <div class="flex justify-between items-start mb-xs">
+          <p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest">${label}</p>
+          <span class="material-symbols-outlined text-on-surface-variant text-[18px]">${icon}</span>
+        </div>
+        <p class="font-headline-md text-headline-md font-bold ${color}">${val}</p>
+      </div>`;
+  }
+
+  refresh();
+  setInterval(refresh, 5000);
+</script>
+</body></html>

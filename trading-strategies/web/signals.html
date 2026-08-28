@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>Signals · Loomi.AI</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="_tailwind.js"></script>
+<style>body{background:#f9f9f9;color:#1a1c1c;font-family:Inter,sans-serif}.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400}</style>
+</head>
+<body>
+<main id="main" class="ml-64 p-margin max-w-7xl"></main>
+<script src="_layout.js"></script>
+<script>
+  renderLayout({ active: "Signals", title: "Signal Scanner" });
+
+  async function refresh() {
+    const r = await (await fetch("/api/signals")).json();
+    const sigs = r.signals || [];
+
+    document.getElementById("main").innerHTML = `
+      <div class="grid grid-cols-12 gap-md mb-md">
+        <div class="col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+          <span class="font-label-sm text-label-sm text-on-tertiary-container bg-tertiary-fixed px-xs py-[2px] rounded">LIVE FEED</span>
+          <h3 class="font-headline-md text-headline-md mt-sm">Active Signal Scan</h3>
+          <p class="text-on-surface-variant mt-xs">Updated every 5 seconds. 9:30–13:00 ET entry window enforced.</p>
+        </div>
+        <div class="col-span-4 bg-primary text-on-primary rounded-xl p-md">
+          <p class="font-label-sm text-label-sm opacity-70 uppercase tracking-widest">Signals This Session</p>
+          <p class="font-headline-lg text-headline-lg font-bold mt-xs">${sigs.length}</p>
+        </div>
+      </div>
+
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+        <table class="w-full text-left">
+          <thead class="bg-surface-container-low">
+            <tr class="text-on-surface-variant text-[10px] uppercase tracking-widest">
+              <th class="p-md">Strategy</th>
+              <th class="p-md">Symbol · TF</th>
+              <th class="p-md">Side</th>
+              <th class="p-md">Bar (ET)</th>
+              <th class="p-md text-right">Trades Today</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-outline-variant/20">
+            ${sigs.length === 0
+              ? `<tr><td colspan="5" class="p-lg text-center text-on-surface-variant italic">No signals yet today. Orchestrator scanning…</td></tr>`
+              : sigs.map(s => `
+              <tr class="hover:bg-surface-container-low transition-colors">
+                <td class="p-md font-bold">${s.name}</td>
+                <td class="p-md font-data-mono">${s.symbol} · ${s.timeframe}</td>
+                <td class="p-md">
+                  <span class="${s.side === "long" ? "bg-gain/10 text-gain" : "bg-loss/10 text-loss"}
+                    px-xs py-[2px] rounded font-label-sm font-bold">${(s.side || "").toUpperCase()}</span>
+                </td>
+                <td class="p-md font-data-mono text-label-sm">${fmt.time(s.bar)}</td>
+                <td class="p-md text-right font-data-mono">${s.trades_today || 0}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+  refresh();
+  setInterval(refresh, 5000);
+</script>
+</body></html>

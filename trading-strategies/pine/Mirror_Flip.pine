@@ -1,0 +1,273 @@
+//@version=6
+// ════════════════════════════════════════════════════════════════════════════
+//  MIRROR FLIP  v1.0
+//  Quick-inversion FVG fade (IMFVG) — Apex 5 Suite
+//
+//  HOW IT WORKS — the unique edge
+//  ──────────────────────────────
+//  An FVG forms (3-candle imbalance). Within a short window (≤ N bars), price
+//  closes THROUGH the FVG, INVERTING it. We fade the inversion: enter in the
+//  direction the FVG just flipped to. The "quick flip" is the signal — slow
+//  inversions are noise, only the abrupt ones reflect real institutional
+//  rejection. Bracket SL/TP, session-filtered.
+//
+//  This is fundamentally different from a standard FVG retest strategy —
+//  we trade the FAILURE of the FVG, not the respect of it.
+//
+//  BACKTEST EDGE (this build, late-2025 → Mar 2026, 1× contract):
+//      GC 15m | SL 1.5×  TP 3.0× | age 8 | NY    | WR 41.5%  PF 1.28  N 171  Net +$37,046
+//      GC 15m | SL 2.0×  TP 4.0× | age 8 | NY    | WR 43.9%  PF 1.18  N 148  Net +$26,909
+//      GC 15m | SL 1.5×  TP 2.5× | age 6 | NY    | WR 43.1%  PF 1.19  N 144  Net +$20,476
+//      ES 5m  | SL 1.5×  TP 3.0× | age 8 | NY    | WR 36.7%  PF 1.29  N 60   Net  +$4,649
+//
+//  Defaults match the highest-N qualifier on GC 15m. NY-only session.
+//
+//  AUTOMATION STACK: TradingView → TradersPost → broker
+//  ─ Recalculate: Bar Close ONLY  ─  Pyramiding 0  ─  Allow Add to Pos = OFF
+// ════════════════════════════════════════════════════════════════════════════
+strategy("MIRROR FLIP [v1.0]",
+     overlay                 = true,
+     max_bars_back            = 500,
+     max_boxes_count          = 100,
+     max_lines_count          = 100,
+     max_labels_count         = 50,
+     pyramiding               = 0,
+     default_qty_type         = strategy.fixed,
+     default_qty_value        = 1,
+     initial_capital          = 25000,
+     commission_type          = strategy.commission.cash_per_contract,
+     commission_value         = 0.62,
+     slippage                 = 1,
+     calc_on_every_tick       = false,
+     process_orders_on_close  = true)
+
+// ─── INPUTS ─────────────────────────────────────────────────────────────────
+grpCore = "▸ Core"
+atr_len = input.int(14,    "ATR Length",        minval=1,             group=grpCore)
+sl_mult = input.float(1.5, "SL ATR Multiplier", minval=0.1, step=0.1, group=grpCore,
+     tooltip="Best on GC 15m: 1.5×.")
+tp_mult = input.float(3.0, "TP ATR Multiplier", minval=0.1, step=0.1, group=grpCore,
+     tooltip="Best on GC 15m: 3.0×. Tighter 2.5× also qualifies.")
+max_age = input.int(8, "Quick-flip max age (bars)", minval=1, maxval=30, group=grpCore,
+     tooltip="FVG must invert within N bars of forming. Beyond that = stale, ignored.")
+fvg_min = input.float(0.0, "FVG min size (× ATR)", minval=0.0, step=0.1, group=grpCore,
+     tooltip="0 = accept all FVGs. Increase to filter micro-gaps.")
+
+grpSess = "▸ Session"
+trade_asia    = input.bool(false, "Asia KZ  (20:00-00:00 NY)", group=grpSess)
+trade_london  = input.bool(false, "London   (02:00-05:00 NY)", group=grpSess)
+trade_ny      = input.bool(true,  "NY Open  (09:30-11:30 NY)", group=grpSess)
+trade_24h     = input.bool(false, "24h (override session filters)", group=grpSess)
+flat_at_close = input.bool(true,  "Flatten at 16:00 NY",       group=grpSess)
+
+grpVis = "▸ Visuals"
+show_fvgs   = input.bool(true, "Show FVGs",          group=grpVis)
+show_flips  = input.bool(true, "Show flip markers",  group=grpVis)
+
+// ─── TIME ───────────────────────────────────────────────────────────────────
+ny_h = hour(time, "America/New_York")
+ny_m = minute(time, "America/New_York")
+td   = ny_h + ny_m / 60.0
+
+in_asia   = trade_asia   and (td >= 20.0 or td < 0.0)
+in_london = trade_london and (td >= 2.0 and td < 5.0)
+in_ny     = trade_ny     and (td >= 9.5 and td < 11.5)
+in_session = trade_24h or in_asia or in_london or in_ny
+
+sess_end = ny_h == 16 and ny_m == 0
+atr_val  = ta.atr(atr_len)
+
+// ─── FVG TRACKING ───────────────────────────────────────────────────────────
+type FVG
+    int   born_bar
+    float top
+    float bot
+    int   dir       // 1 bull, -1 bear
+    bool  alive
+
+var array<FVG> fvgs = array.new<FVG>()
+
+// New FVGs detected on confirmed bars
+bull_fvg = barstate.isconfirmed and high[2] < low and (low - high[2]) >= atr_val * fvg_min
+bear_fvg = barstate.isconfirmed and low[2] > high and (low[2] - high) >= atr_val * fvg_min
+
+if bull_fvg
+    f = FVG.new()
+    f.born_bar := bar_index
+    f.top := low
+    f.bot := high[2]
+    f.dir := 1
+    f.alive := true
+    array.push(fvgs, f)
+
+if bear_fvg
+    f = FVG.new()
+    f.born_bar := bar_index
+    f.top := low[2]
+    f.bot := high
+    f.dir := -1
+    f.alive := true
+    array.push(fvgs, f)
+
+// Cap memory
+if array.size(fvgs) > 60
+    array.shift(fvgs)
+
+// ─── FLIP DETECTION & ENTRY ─────────────────────────────────────────────────
+flip_long_signal  = false
+flip_short_signal = false
+float entry_top  = na
+float entry_bot  = na
+
+if barstate.isconfirmed and in_session and strategy.opentrades == 0
+        and array.size(fvgs) > 0
+    for i = array.size(fvgs) - 1 to 0
+        f = array.get(fvgs, i)
+        if not f.alive
+            continue
+        int age = bar_index - f.born_bar
+        if age <= 0 or age > max_age
+            continue
+        // Quick-flip: bull FVG → close BELOW its bottom = bearish flip → SHORT
+        // bear FVG → close ABOVE its top = bullish flip → LONG
+        if f.dir == 1 and close < f.bot
+            f.alive := false
+            array.set(fvgs, i, f)
+            flip_short_signal := true
+            entry_top := f.top
+            entry_bot := f.bot
+            break
+        if f.dir == -1 and close > f.top
+            f.alive := false
+            array.set(fvgs, i, f)
+            flip_long_signal := true
+            entry_top := f.top
+            entry_bot := f.bot
+            break
+
+// ─── EXECUTION ──────────────────────────────────────────────────────────────
+if flip_long_signal
+    strategy.entry("Long", strategy.long)
+    strategy.exit("XL", from_entry="Long",
+         stop  = close - sl_mult * atr_val,
+         limit = close + tp_mult * atr_val)
+    alert('{"action":"buy","sentiment":"long","quantity":"1"}', alert.freq_once_per_bar)
+
+if flip_short_signal
+    strategy.entry("Short", strategy.short)
+    strategy.exit("XS", from_entry="Short",
+         stop  = close + sl_mult * atr_val,
+         limit = close - tp_mult * atr_val)
+    alert('{"action":"sell","sentiment":"short","quantity":"1"}', alert.freq_once_per_bar)
+
+if flat_at_close and sess_end and strategy.opentrades > 0
+    strategy.close_all(comment="EOD")
+    alert('{"action":"sell","sentiment":"flat","quantity":"1"}', alert.freq_once_per_bar)
+
+exited = strategy.position_size == 0 and strategy.position_size[1] != 0
+if exited
+    alert('{"action":"sell","sentiment":"flat","quantity":"1"}', alert.freq_once_per_bar)
+
+// ─── VISUALS ────────────────────────────────────────────────────────────────
+bgcolor(in_asia   ? color.new(#FF9800, 95) :
+        in_london ? color.new(#2196F3, 95) :
+        in_ny     ? color.new(#00BCD4, 95) : na, title="Session")
+
+if show_fvgs and barstate.islast and array.size(fvgs) > 0
+    int show_n = math.min(8, array.size(fvgs))
+    for i = array.size(fvgs) - show_n to array.size(fvgs) - 1
+        f = array.get(fvgs, i)
+        if not f.alive
+            continue
+        col = f.dir == 1 ? color.new(#26A69A, 85) : color.new(#EF5350, 85)
+        box.new(f.born_bar - 2, f.top, f.born_bar + max_age, f.bot,
+             bgcolor=col, border_color=col, border_width=1)
+
+if show_flips and flip_long_signal
+    label.new(bar_index, low - atr_val * 0.6,
+         "▲ FLIP LONG\n(bear FVG broken up)",
+         style=label.style_label_up, color=#003520,
+         textcolor=#00E676, size=size.small)
+if show_flips and flip_short_signal
+    label.new(bar_index, high + atr_val * 0.6,
+         "▼ FLIP SHORT\n(bull FVG broken down)",
+         style=label.style_label_down, color=#350010,
+         textcolor=#FF5252, size=size.small)
+
+// ─── ACTIVE-TRADE LINES ─────────────────────────────────────────────────────
+var float ep = na
+var float sl_p = na
+var float tp_p = na
+
+if strategy.position_size > 0
+    ep   := strategy.position_avg_price
+    sl_p := strategy.position_avg_price - sl_mult * atr_val
+    tp_p := strategy.position_avg_price + tp_mult * atr_val
+else if strategy.position_size < 0
+    ep   := strategy.position_avg_price
+    sl_p := strategy.position_avg_price + sl_mult * atr_val
+    tp_p := strategy.position_avg_price - tp_mult * atr_val
+else
+    ep := na
+    sl_p := na
+    tp_p := na
+
+plot(ep,   "Entry",       color=color.new(#FFFFFF, 20), linewidth=1, style=plot.style_linebr)
+plot(sl_p, "Stop Loss",   color=color.new(#FF5252, 0),  linewidth=2, style=plot.style_linebr)
+plot(tp_p, "Take Profit", color=color.new(#00E676, 0),  linewidth=2, style=plot.style_linebr)
+
+// ─── DASHBOARD ──────────────────────────────────────────────────────────────
+var int _tp = 0
+var int _sl = 0
+var int _last_ct = 0
+
+if strategy.closedtrades > _last_ct
+    for i = _last_ct to strategy.closedtrades - 1
+        if strategy.closedtrades.profit(i) > 0
+            _tp += 1
+        else
+            _sl += 1
+    _last_ct := strategy.closedtrades
+
+var table dash = table.new(position.top_right, 2, 6,
+     bgcolor=#080B12, border_color=#1C2333, border_width=1,
+     frame_color=#1C2333, frame_width=2)
+
+if barstate.islast
+    int   ct  = strategy.closedtrades
+    int   tot = _tp + _sl
+    float tpp = tot > 0 ? math.round(_tp / tot * 100.0, 1) : 0.0
+    float slp = tot > 0 ? math.round(_sl / tot * 100.0, 1) : 0.0
+    float wr  = ct  > 0 ? math.round(strategy.wintrades / ct * 100.0, 1) : 0.0
+    string ps = strategy.position_size > 0 ? "▲  LONG"  :
+                strategy.position_size < 0 ? "▼  SHORT" : "—  FLAT"
+    color  pc = strategy.position_size > 0 ? #00E676 :
+                strategy.position_size < 0 ? #FF5252 : #555E6B
+
+    table.cell(dash, 0, 0, "MIRROR FLIP   v1.0",
+         bgcolor=#0A0E1A, text_color=#FF5252, text_size=size.small,
+         text_halign=text.align_center)
+    table.merge_cells(dash, 0, 0, 1, 0)
+    table.cell(dash, 0, 1, "  TP HITS", bgcolor=#080B12, text_color=#3A4455,
+         text_size=size.tiny, text_halign=text.align_left)
+    table.cell(dash, 1, 1, str.tostring(_tp) + "   (" + str.tostring(tpp) + "%)",
+         bgcolor=#081208, text_color=#00E676, text_size=size.normal,
+         text_halign=text.align_center)
+    table.cell(dash, 0, 2, "  SL HITS", bgcolor=#080B12, text_color=#3A4455,
+         text_size=size.tiny, text_halign=text.align_left)
+    table.cell(dash, 1, 2, str.tostring(_sl) + "   (" + str.tostring(slp) + "%)",
+         bgcolor=#120808, text_color=#FF5252, text_size=size.normal,
+         text_halign=text.align_center)
+    table.cell(dash, 0, 3, "", bgcolor=#1C2333, text_color=#1C2333, text_size=size.tiny)
+    table.cell(dash, 1, 3, "", bgcolor=#1C2333, text_color=#1C2333, text_size=size.tiny)
+    table.cell(dash, 0, 4, "  " + str.tostring(ct) + " TRADES",
+         bgcolor=#080B12, text_color=#555E6B, text_size=size.tiny,
+         text_halign=text.align_left)
+    table.cell(dash, 1, 4, "WR  " + str.tostring(wr) + "%",
+         bgcolor=#080B12,
+         text_color=wr >= 60.0 ? #00E676 : wr >= 50.0 ? #FFD700 : #FF5252,
+         text_size=size.small, text_halign=text.align_center)
+    table.cell(dash, 0, 5, "  POSITION", bgcolor=#080B12, text_color=#3A4455,
+         text_size=size.tiny, text_halign=text.align_left)
+    table.cell(dash, 1, 5, ps, bgcolor=#080B12, text_color=pc,
+         text_size=size.small, text_halign=text.align_center)

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>Portfolio · Loomi.AI</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="_tailwind.js"></script>
+<style>body{background:#f9f9f9;color:#1a1c1c;font-family:Inter,sans-serif}.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400}</style>
+</head>
+<body>
+<main id="main" class="ml-64 p-margin max-w-7xl"></main>
+<script src="_layout.js"></script>
+<script>
+  renderLayout({ active: "Portfolio", title: "Portfolio & Positions" });
+
+  async function refresh() {
+    const r = await (await fetch("/api/portfolio")).json();
+
+    document.getElementById("main").innerHTML = `
+      <div class="grid grid-cols-3 gap-md mb-md">
+        ${stat("Cash Available", fmt.money(r.cash_available))}
+        ${stat("Open Positions", r.positions.length)}
+        ${stat("Daily P&L", fmt.money(r.daily_pnl), r.daily_pnl >= 0 ? "text-gain" : "text-loss")}
+      </div>
+
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden mb-md">
+        <div class="p-md border-b border-outline-variant">
+          <h4 class="font-label-md text-label-md uppercase tracking-widest">Open Positions (${r.positions.length})</h4>
+        </div>
+        ${r.positions.length === 0
+          ? `<div class="p-md text-on-surface-variant italic">No open positions.</div>`
+          : `<table class="w-full text-left">
+              <thead class="bg-surface-container-low text-[10px] uppercase text-on-surface-variant tracking-widest">
+                <tr><th class="p-md">Symbol</th><th class="p-md">Strategy</th><th class="p-md">Side</th>
+                    <th class="p-md text-right">Shares</th><th class="p-md text-right">Entry</th>
+                    <th class="p-md text-right">TP</th><th class="p-md text-right">SL</th>
+                    <th class="p-md">Opened</th></tr>
+              </thead>
+              <tbody class="divide-y divide-outline-variant/20">
+                ${r.positions.map(p => `
+                  <tr>
+                    <td class="p-md font-bold">${p.symbol}</td>
+                    <td class="p-md text-label-sm text-on-surface-variant">${p.strategy}</td>
+                    <td class="p-md"><span class="${p.side === "long" ? "bg-gain/10 text-gain" : "bg-loss/10 text-loss"} px-xs py-[2px] rounded font-label-sm font-bold">${(p.side||"").toUpperCase()}</span></td>
+                    <td class="p-md text-right font-data-mono">${p.shares}</td>
+                    <td class="p-md text-right font-data-mono">${fmt.num(p.entry)}</td>
+                    <td class="p-md text-right font-data-mono text-gain">${fmt.num(p.tp)}</td>
+                    <td class="p-md text-right font-data-mono text-loss">${fmt.num(p.sl)}</td>
+                    <td class="p-md text-label-sm">${fmt.time(p.opened_at)}</td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>`}
+      </div>
+
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+        <div class="p-md border-b border-outline-variant">
+          <h4 class="font-label-md text-label-md uppercase tracking-widest">Recent Trades (last ${r.recent_trades.length})</h4>
+        </div>
+        ${r.recent_trades.length === 0
+          ? `<div class="p-md text-on-surface-variant italic">No trades closed yet.</div>`
+          : `<table class="w-full text-left">
+              <thead class="bg-surface-container-low text-[10px] uppercase text-on-surface-variant tracking-widest">
+                <tr><th class="p-md">When</th><th class="p-md">Symbol</th><th class="p-md">Strategy</th>
+                    <th class="p-md">Side</th><th class="p-md text-right">Entry</th>
+                    <th class="p-md text-right">Exit</th><th class="p-md text-right">P&L</th>
+                    <th class="p-md">Reason</th></tr>
+              </thead>
+              <tbody class="divide-y divide-outline-variant/20">
+                ${r.recent_trades.slice().reverse().map(t => `
+                  <tr>
+                    <td class="p-md text-label-sm">${fmt.time(t.timestamp)}</td>
+                    <td class="p-md font-bold">${t.symbol}</td>
+                    <td class="p-md text-label-sm text-on-surface-variant">${t.strategy}</td>
+                    <td class="p-md"><span class="${t.side === "long" ? "text-gain" : "text-loss"} font-label-sm font-bold">${(t.side||"").toUpperCase()}</span></td>
+                    <td class="p-md text-right font-data-mono">${fmt.num(t.entry)}</td>
+                    <td class="p-md text-right font-data-mono">${fmt.num(t.exit)}</td>
+                    <td class="p-md text-right font-data-mono font-bold ${+t.pnl >= 0 ? "text-gain" : "text-loss"}">${fmt.money(t.pnl)}</td>
+                    <td class="p-md text-label-sm text-on-surface-variant">${t.reason || "—"}</td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>`}
+      </div>
+    `;
+  }
+
+  function stat(label, val, color="") {
+    return `
+      <div class="bg-surface-container-lowest p-md rounded-xl border border-outline-variant/40">
+        <p class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs">${label}</p>
+        <p class="font-headline-md text-headline-md font-bold ${color}">${val}</p>
+      </div>`;
+  }
+
+  refresh();
+  setInterval(refresh, 5000);
+</script>
+</body></html>

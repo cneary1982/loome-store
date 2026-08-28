@@ -1,0 +1,273 @@
+//@version=6
+// ============================================================
+// INDICATOR: QQQ Dealer GEX Walls + Fat Tail Map
+// Version:   v2  (adds fat-tail probability lines, DEX, timing-aware logic)
+// Instrument: QQQ (spot) — apply to QQQ, 1m–5m timeframe, NY exchange time
+// Purpose:    Visualize daily call wall / put wall / zero-gamma PLUS
+//             1.0% / 1.5% / 2.0% / 2.5% fat-tail levels with embedded
+//             empirical hit probabilities by regime (from 189-day backtest).
+//             Dashboard shows live trade mode, DEX trend, prime-window timing.
+//
+// WORKFLOW:   Each evening, run gex_daily_updater.py → copy 7 inputs below.
+// ============================================================
+indicator("QQQ Dealer GEX Walls + Fat Tail Map [v2]",
+     overlay      = true,
+     max_bars_back = 500,
+     max_lines_count = 100,
+     max_labels_count = 100)
+
+// ─────────────────────────────────────────────────────────────
+// DAILY INPUTS — paste from EOD updater
+// ─────────────────────────────────────────────────────────────
+grp_d = "Daily Levels (from EOD updater)"
+i_call_wall  = input.float(750.00, "Call Wall  ($)",    group=grp_d)
+i_put_wall   = input.float(740.00, "Put Wall   ($)",    group=grp_d)
+i_zero_gamma = input.float(0.0,    "Zero Gamma ($) [0=none]", group=grp_d)
+i_gex_value  = input.float(4.97,   "GEX ($bn / 1%)",    group=grp_d)
+i_dex_value  = input.float(206.15, "DEX ($bn)",         group=grp_d)
+i_dex_prev   = input.float(0.0,    "DEX Yesterday ($bn) [0=skip trend]", group=grp_d, tooltip="Lets the indicator show DEX expanding vs contracting day-over-day")
+i_regime     = input.int(1, "Regime sign (1=Pos, -1=Neg, 0=Mid)", group=grp_d, minval=-1, maxval=1)
+i_eod_spot   = input.float(746.16, "Prior EOD Spot ($)", group=grp_d, tooltip="Anchor for fat-tail % levels")
+
+// ─────────────────────────────────────────────────────────────
+// FAT TAIL DISPLAY
+// ─────────────────────────────────────────────────────────────
+grp_ft = "Fat Tail Map"
+i_show_ft     = input.bool(true,  "Show Fat Tail Levels", group=grp_ft)
+i_anchor      = input.string("Prior Close", "Anchor For % Levels", options=["Prior Close","Today's Open"], group=grp_ft, tooltip="Prior Close = fixed for the session (recommended). Today's Open = re-anchors at 9:30")
+i_show_dn     = input.bool(true,  "Show Downside Tails (puts)",  group=grp_ft)
+i_show_up     = input.bool(true,  "Show Upside Tails (calls)",   group=grp_ft)
+i_pct_labels  = input.bool(true,  "Show % + P(hit) labels",      group=grp_ft)
+
+// ─────────────────────────────────────────────────────────────
+// TRIGGER + SIZING
+// ─────────────────────────────────────────────────────────────
+grp_t = "Triggers / Sizing"
+i_zone_width = input.float(0.50, "Wall Zone Half-Width ($)", group=grp_t)
+i_show_dash  = input.bool(true,  "Show Dashboard",           group=grp_t)
+i_acct       = input.float(20000.0, "Account Size ($)",      group=grp_t)
+i_fade_risk  = input.float(1.5,  "Fade Risk %",              group=grp_t)
+i_break_risk = input.float(0.75, "Breakout Risk %",          group=grp_t)
+i_prime_lo   = input.session("0930-1030", "Prime Wall Window (ET)", group=grp_t)
+i_fat_lo     = input.session("0930-1130", "Prime Fat-Tail Window (ET)", group=grp_t)
+
+// ─────────────────────────────────────────────────────────────
+// COLORS
+// ─────────────────────────────────────────────────────────────
+c_call    = color.new(#2ECC40, 0)
+c_put     = color.new(#FF4136, 0)
+c_zg      = color.new(#0074D9, 0)
+c_mid     = color.new(#FFB000, 30)
+c_zone_c  = color.new(#2ECC40, 82)
+c_zone_p  = color.new(#FF4136, 82)
+c_dash_bg = #1e222d
+c_dash_br = #373a46
+
+// Fat-tail gradient (subtle to dramatic)
+c_ft_10 = color.new(#FFC857, 60)   // yellow      — 1.0%
+c_ft_15 = color.new(#FF8E0D, 50)   // orange      — 1.5%
+c_ft_20 = color.new(#E55934, 40)   // red-orange  — 2.0%
+c_ft_25 = color.new(#A4161A, 30)   // deep red    — 2.5%
+
+// ─────────────────────────────────────────────────────────────
+// DERIVED
+// ─────────────────────────────────────────────────────────────
+midpoint = (i_call_wall + i_put_wall) / 2.0
+has_zg   = i_zero_gamma > 0
+
+// Fat-tail anchor — Prior Close (static) or Today's Open (recalcs at 9:30)
+var float anchor_px = na
+new_session = ta.change(time("D")) != 0
+if i_anchor == "Today's Open"
+    if new_session
+        anchor_px := open
+else
+    anchor_px := i_eod_spot
+
+// Trade mode label
+trade_mode = i_regime == 1 ? "FADE WALLS" : i_regime == -1 ? "HUNT BREAKOUTS" : "STAND DOWN"
+
+// Empirical P(intraday move ≥ X%) from 189-day backtest — split by regime
+// Pos GEX:  1.0%:47%  1.5%:23%  2.0%:12%  2.5%:2%
+// Neg GEX:  1.0%:81%  1.5%:47%  2.0%:28%  2.5%:10%
+prob_10 = i_regime == 1  ? 47 : i_regime == -1 ? 81 : 35
+prob_15 = i_regime == 1  ? 23 : i_regime == -1 ? 47 : 35
+prob_20 = i_regime == 1  ? 12 : i_regime == -1 ? 28 : 19
+prob_25 = i_regime == 1  ?  2 : i_regime == -1 ? 10 :  6
+
+// Session timing flags
+in_prime_walls   = not na(time(timeframe.period, i_prime_lo, timezone="America/New_York"))
+in_prime_fattail = not na(time(timeframe.period, i_fat_lo,   timezone="America/New_York"))
+
+// ─────────────────────────────────────────────────────────────
+// WALL & MIDPOINT LINES
+// ─────────────────────────────────────────────────────────────
+plot(i_call_wall, "Call Wall",  color=c_call, linewidth=2)
+plot(i_put_wall,  "Put Wall",   color=c_put,  linewidth=2)
+plot(midpoint,    "Midpoint",   color=c_mid,  linewidth=1, style=plot.style_linebr)
+plot(has_zg ? i_zero_gamma : na, "Zero Gamma", color=c_zg, linewidth=1, style=plot.style_circles)
+
+// Wall trigger zones
+cw_top = plot(i_call_wall + i_zone_width, "CW zone top", color=color.new(c_call,90), display=display.none)
+cw_bot = plot(i_call_wall - i_zone_width, "CW zone bot", color=color.new(c_call,90), display=display.none)
+fill(cw_top, cw_bot, color=c_zone_c, title="CW Trigger Zone")
+pw_top = plot(i_put_wall + i_zone_width, "PW zone top", color=color.new(c_put,90), display=display.none)
+pw_bot = plot(i_put_wall - i_zone_width, "PW zone bot", color=color.new(c_put,90), display=display.none)
+fill(pw_top, pw_bot, color=c_zone_p, title="PW Trigger Zone")
+
+// ─────────────────────────────────────────────────────────────
+// FAT TAIL LINES (color-graded, dashed, low clutter)
+// ─────────────────────────────────────────────────────────────
+ft_up_10 = i_show_ft and i_show_up ? anchor_px * 1.010 : na
+ft_up_15 = i_show_ft and i_show_up ? anchor_px * 1.015 : na
+ft_up_20 = i_show_ft and i_show_up ? anchor_px * 1.020 : na
+ft_up_25 = i_show_ft and i_show_up ? anchor_px * 1.025 : na
+ft_dn_10 = i_show_ft and i_show_dn ? anchor_px * 0.990 : na
+ft_dn_15 = i_show_ft and i_show_dn ? anchor_px * 0.985 : na
+ft_dn_20 = i_show_ft and i_show_dn ? anchor_px * 0.980 : na
+ft_dn_25 = i_show_ft and i_show_dn ? anchor_px * 0.975 : na
+
+plot(ft_up_10, "+1.0%",  color=c_ft_10, linewidth=1, style=plot.style_circles)
+plot(ft_up_15, "+1.5%",  color=c_ft_15, linewidth=1, style=plot.style_circles)
+plot(ft_up_20, "+2.0%",  color=c_ft_20, linewidth=1, style=plot.style_circles)
+plot(ft_up_25, "+2.5%",  color=c_ft_25, linewidth=1, style=plot.style_circles)
+plot(ft_dn_10, "-1.0%",  color=c_ft_10, linewidth=1, style=plot.style_circles)
+plot(ft_dn_15, "-1.5%",  color=c_ft_15, linewidth=1, style=plot.style_circles)
+plot(ft_dn_20, "-2.0%",  color=c_ft_20, linewidth=1, style=plot.style_circles)
+plot(ft_dn_25, "-2.5%",  color=c_ft_25, linewidth=1, style=plot.style_circles)
+
+// Fat tail labels (on last bar, right side)
+if i_pct_labels and i_show_ft and barstate.islast
+    if i_show_up
+        label.new(bar_index + 3, anchor_px * 1.010, "+1.0%  " + str.tostring(prob_10) + "%",  color=color.new(c_ft_10,40), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 3, anchor_px * 1.015, "+1.5%  " + str.tostring(prob_15) + "%",  color=color.new(c_ft_15,40), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 3, anchor_px * 1.020, "+2.0%  " + str.tostring(prob_20) + "%",  color=color.new(c_ft_20,40), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 3, anchor_px * 1.025, "+2.5%  " + str.tostring(prob_25) + "%",  color=color.new(c_ft_25,40), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+    if i_show_dn
+        label.new(bar_index + 3, anchor_px * 0.990, "-1.0%  " + str.tostring(prob_10) + "%",  color=color.new(c_ft_10,40), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 3, anchor_px * 0.985, "-1.5%  " + str.tostring(prob_15) + "%",  color=color.new(c_ft_15,40), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 3, anchor_px * 0.980, "-2.0%  " + str.tostring(prob_20) + "%",  color=color.new(c_ft_20,40), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+        label.new(bar_index + 3, anchor_px * 0.975, "-2.5%  " + str.tostring(prob_25) + "%",  color=color.new(c_ft_25,40), textcolor=color.white, style=label.style_label_left, size=size.tiny)
+
+// ─────────────────────────────────────────────────────────────
+// EVENT MARKERS & ALERTS
+// ─────────────────────────────────────────────────────────────
+in_cw_zone = math.abs(close - i_call_wall) <= i_zone_width
+in_pw_zone = math.abs(close - i_put_wall)  <= i_zone_width
+just_cw = in_cw_zone and not in_cw_zone[1]
+just_pw = in_pw_zone and not in_pw_zone[1]
+cw_breach = close > i_call_wall and close[1] <= i_call_wall
+pw_breach = close < i_put_wall  and close[1] >= i_put_wall
+
+// Mark wall hits PRIME window vs LATE for visual context
+plotshape(just_cw and in_prime_walls,  "CW Touch PRIME", style=shape.triangledown, location=location.abovebar, color=c_call, size=size.normal, text="CW★")
+plotshape(just_cw and not in_prime_walls, "CW Touch LATE", style=shape.triangledown, location=location.abovebar, color=color.new(c_call,30), size=size.tiny, text="cw")
+plotshape(just_pw and in_prime_walls,  "PW Touch PRIME", style=shape.triangleup, location=location.belowbar, color=c_put, size=size.normal, text="PW★")
+plotshape(just_pw and not in_prime_walls, "PW Touch LATE", style=shape.triangleup, location=location.belowbar, color=color.new(c_put,30), size=size.tiny, text="pw")
+plotshape(cw_breach, "CW Breach", style=shape.xcross, location=location.abovebar, color=color.yellow, size=size.normal, text="BRK")
+plotshape(pw_breach, "PW Breach", style=shape.xcross, location=location.belowbar, color=color.yellow, size=size.normal, text="BRK")
+
+// Fat-tail crosses (catch when price tags the dashed lines)
+hit_up_15 = high >= anchor_px * 1.015 and not (high[1] >= anchor_px * 1.015)
+hit_up_20 = high >= anchor_px * 1.020 and not (high[1] >= anchor_px * 1.020)
+hit_up_25 = high >= anchor_px * 1.025 and not (high[1] >= anchor_px * 1.025)
+hit_dn_15 = low  <= anchor_px * 0.985 and not (low[1]  <= anchor_px * 0.985)
+hit_dn_20 = low  <= anchor_px * 0.980 and not (low[1]  <= anchor_px * 0.980)
+hit_dn_25 = low  <= anchor_px * 0.975 and not (low[1]  <= anchor_px * 0.975)
+
+plotshape(hit_up_15 or hit_dn_15, "FT 1.5%", style=shape.diamond, location=location.absolute, color=c_ft_15, size=size.tiny)
+plotshape(hit_up_20 or hit_dn_20, "FT 2.0%", style=shape.diamond, location=location.absolute, color=c_ft_20, size=size.small)
+plotshape(hit_up_25 or hit_dn_25, "FT 2.5%", style=shape.diamond, location=location.absolute, color=c_ft_25, size=size.normal)
+
+// Alert strings — full context including regime, sizing, timing
+prime_tag = in_prime_walls ? "★PRIME WINDOW" : "(late in day)"
+fade_size = i_acct * (i_fade_risk / 100)
+break_size = i_acct * (i_break_risk / 100)
+
+cw_alert_msg = i_regime == 1 ? "QQQ at CALL WALL $" + str.tostring(i_call_wall,"#.##") + " " + prime_tag + " | POS GEX: BUY $" + str.tostring(i_call_wall-2,"#") + " PUT  Target $" + str.tostring(midpoint,"#.##") + "  Risk $" + str.tostring(fade_size,"#") : i_regime == -1 ? "QQQ at CALL WALL $" + str.tostring(i_call_wall,"#.##") + " " + prime_tag + " | NEG GEX: walls weak — consider OTM upside continuation (small)" : "QQQ at CALL WALL $" + str.tostring(i_call_wall,"#.##") + " | Mid GEX — no edge"
+
+pw_alert_msg = i_regime == 1 ? "QQQ at PUT WALL $" + str.tostring(i_put_wall,"#.##") + " " + prime_tag + " | POS GEX: BUY $" + str.tostring(i_put_wall+2,"#") + " CALL  Target $" + str.tostring(midpoint,"#.##") + "  Risk $" + str.tostring(fade_size,"#") : i_regime == -1 ? "QQQ at PUT WALL $" + str.tostring(i_put_wall,"#.##") + " " + prime_tag + " | NEG GEX: BREAKDOWN — BUY $" + str.tostring(i_put_wall,"#") + " PUT 1DTE  Risk $" + str.tostring(break_size,"#") : "QQQ at PUT WALL $" + str.tostring(i_put_wall,"#.##") + " | Mid GEX — no edge"
+
+if just_cw
+    alert(cw_alert_msg, alert.freq_once_per_bar)
+if just_pw
+    alert(pw_alert_msg, alert.freq_once_per_bar)
+if cw_breach
+    alert("CW BREACH $" + str.tostring(i_call_wall,"#.##") + " — exit short bias", alert.freq_once_per_bar)
+if pw_breach
+    alert("PW BREACH $" + str.tostring(i_put_wall,"#.##") + " — exit long bias" + (i_regime == -1 ? " | breakdown trade may extend" : ""), alert.freq_once_per_bar)
+if hit_up_25
+    alert("FAT TAIL +2.5% HIT — anchor $" + str.tostring(anchor_px,"#.##") + " | rare event (" + str.tostring(prob_25) + "% baseline)", alert.freq_once_per_bar)
+if hit_dn_25
+    alert("FAT TAIL -2.5% HIT — anchor $" + str.tostring(anchor_px,"#.##") + " | rare event (" + str.tostring(prob_25) + "% baseline)", alert.freq_once_per_bar)
+
+// ─────────────────────────────────────────────────────────────
+// DASHBOARD
+// ─────────────────────────────────────────────────────────────
+var table dash = table.new(position.top_right, 2, 16, bgcolor=c_dash_bg, border_width=1, border_color=c_dash_br, frame_color=c_dash_br, frame_width=1)
+if i_show_dash and barstate.islast
+    dist_cw  = (i_call_wall / close - 1) * 100
+    dist_pw  = (i_put_wall  / close - 1) * 100
+    dist_mid = (midpoint    / close - 1) * 100
+    dex_delta = i_dex_prev > 0 ? i_dex_value - i_dex_prev : na
+    dex_trend = na(dex_delta) ? "—" : dex_delta > 0 ? "▲ EXPANDING" : "▼ CONTRACTING"
+    dex_color = na(dex_delta) ? color.gray : dex_delta > 0 ? c_call : c_put
+
+    mode_color = i_regime == 1 ? c_call : i_regime == -1 ? c_put : color.gray
+
+    timing_label = in_prime_walls ? "★ PRIME WALL WINDOW" : in_prime_fattail ? "○ Fat-tail window" : "after-prime"
+    timing_color = in_prime_walls ? c_call : in_prime_fattail ? c_mid : color.gray
+
+    table.cell(dash, 0, 0,  "QQQ GEX v2",            text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 0,  "$"+str.tostring(close,"#.##"), text_color=color.white, text_size=size.small)
+
+    table.cell(dash, 0, 1,  "GEX",                   text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 1,  str.tostring(i_gex_value,"+#.##")+"bn", text_color=mode_color, text_size=size.small)
+
+    table.cell(dash, 0, 2,  "DEX",                   text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 2,  str.tostring(i_dex_value,"+#.#")+"bn", text_color=color.white, text_size=size.small)
+
+    table.cell(dash, 0, 3,  "DEX trend",             text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 3,  dex_trend,               text_color=dex_color, text_size=size.tiny)
+
+    table.cell(dash, 0, 4,  "Mode",                  text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 4,  trade_mode,              text_color=mode_color, text_size=size.normal)
+
+    table.cell(dash, 0, 5,  "Timing",                text_color=color.gray, text_size=size.small)
+    table.cell(dash, 1, 5,  timing_label,            text_color=timing_color, text_size=size.small)
+
+    table.cell(dash, 0, 6,  "─────────",             text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 6,  "─────────",             text_color=color.gray, text_size=size.tiny)
+
+    table.cell(dash, 0, 7,  "Call Wall",             text_color=c_call, text_size=size.small)
+    table.cell(dash, 1, 7,  "$"+str.tostring(i_call_wall,"#.##")+" ("+str.tostring(dist_cw,"+#.##")+"%)", text_color=c_call, text_size=size.small)
+
+    table.cell(dash, 0, 8,  "Mid",                   text_color=c_mid, text_size=size.small)
+    table.cell(dash, 1, 8,  "$"+str.tostring(midpoint,"#.##")+" ("+str.tostring(dist_mid,"+#.##")+"%)", text_color=c_mid, text_size=size.small)
+
+    table.cell(dash, 0, 9,  "Put Wall",              text_color=c_put, text_size=size.small)
+    table.cell(dash, 1, 9,  "$"+str.tostring(i_put_wall,"#.##")+" ("+str.tostring(dist_pw,"+#.##")+"%)", text_color=c_put, text_size=size.small)
+
+    if has_zg
+        table.cell(dash, 0, 10, "Zero Gamma",         text_color=c_zg, text_size=size.small)
+        table.cell(dash, 1, 10, "$"+str.tostring(i_zero_gamma,"#.##"), text_color=c_zg, text_size=size.small)
+    else
+        table.cell(dash, 0, 10, "Zero Gamma",         text_color=color.gray, text_size=size.tiny)
+        table.cell(dash, 1, 10, "—",                  text_color=color.gray, text_size=size.tiny)
+
+    table.cell(dash, 0, 11, "─────────",             text_color=color.gray, text_size=size.tiny)
+    table.cell(dash, 1, 11, "─ Fat Tails ─",         text_color=color.gray, text_size=size.tiny)
+
+    table.cell(dash, 0, 12, "+1.5% / -1.5%",         text_color=c_ft_15, text_size=size.tiny)
+    table.cell(dash, 1, 12, "$"+str.tostring(anchor_px*1.015,"#.##")+" / $"+str.tostring(anchor_px*0.985,"#.##")+"  ("+str.tostring(prob_15)+"%)", text_color=c_ft_15, text_size=size.tiny)
+
+    table.cell(dash, 0, 13, "+2.0% / -2.0%",         text_color=c_ft_20, text_size=size.tiny)
+    table.cell(dash, 1, 13, "$"+str.tostring(anchor_px*1.020,"#.##")+" / $"+str.tostring(anchor_px*0.980,"#.##")+"  ("+str.tostring(prob_20)+"%)", text_color=c_ft_20, text_size=size.tiny)
+
+    table.cell(dash, 0, 14, "+2.5% / -2.5%",         text_color=c_ft_25, text_size=size.tiny)
+    table.cell(dash, 1, 14, "$"+str.tostring(anchor_px*1.025,"#.##")+" / $"+str.tostring(anchor_px*0.975,"#.##")+"  ("+str.tostring(prob_25)+"%)", text_color=c_ft_25, text_size=size.tiny)
+
+    sizing_label = i_regime == 1  ? "Fade size" : i_regime == -1 ? "Break size" : "Stand down"
+    sizing_value = i_regime == 1 ? "$"+str.tostring(fade_size,"#")+" / "+str.tostring(i_fade_risk,"#.#")+"%" : i_regime == -1 ? "$"+str.tostring(break_size,"#")+" / "+str.tostring(i_break_risk,"#.#")+"%" : "wait"
+    table.cell(dash, 0, 15, sizing_label,            text_color=color.white, text_size=size.small)
+    table.cell(dash, 1, 15, sizing_value,            text_color=mode_color, text_size=size.small)

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>Strategies · Loomi.AI</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="_tailwind.js"></script>
+<style>body{background:#f9f9f9;color:#1a1c1c;font-family:Inter,sans-serif}.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400}</style>
+</head>
+<body>
+<main id="main" class="ml-64 p-margin max-w-7xl"></main>
+<script src="_layout.js"></script>
+<script>
+  renderLayout({ active: "Strategies", title: "Strategy Registry" });
+
+  async function refresh() {
+    const r = await (await fetch("/api/strategies")).json();
+    const rows = r.strategies || [];
+
+    document.getElementById("main").innerHTML = `
+      <div class="flex justify-between items-end mb-md">
+        <div>
+          <p class="text-on-surface-variant">Registered: <span class="font-bold text-primary">${rows.length}</span> · Profitable in BT:
+            <span class="font-bold text-gain">${rows.filter(r => +r.bt_total_R > 0).length}</span></p>
+        </div>
+        <div class="flex gap-sm">
+          <input id="filter" placeholder="Filter by name/symbol…" class="bg-surface-container-low border border-outline-variant rounded-lg px-md py-xs text-label-md focus:outline-none focus:border-primary w-64"/>
+        </div>
+      </div>
+
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+        <table class="w-full text-left">
+          <thead class="bg-surface-container-low">
+            <tr class="text-on-surface-variant text-[10px] uppercase tracking-widest">
+              <th class="p-md">Strategy</th>
+              <th class="p-md">Symbol</th>
+              <th class="p-md">TF</th>
+              <th class="p-md">Enabled</th>
+              <th class="p-md text-right">BT Trades</th>
+              <th class="p-md text-right">BT WR</th>
+              <th class="p-md text-right">BT Exp.</th>
+              <th class="p-md text-right">BT Total R</th>
+              <th class="p-md">Today</th>
+            </tr>
+          </thead>
+          <tbody id="rows" class="divide-y divide-outline-variant/20"></tbody>
+        </table>
+      </div>
+    `;
+
+    function paint(filter = "") {
+      const tb = document.getElementById("rows");
+      const f = filter.toLowerCase();
+      tb.innerHTML = rows
+        .filter(r => !f || r.name.toLowerCase().includes(f) || r.symbol.toLowerCase().includes(f) || r.class.toLowerCase().includes(f))
+        .map(r => {
+          const totalR = +r.bt_total_R;
+          const profitable = totalR > 0;
+          return `
+          <tr class="hover:bg-surface-container-low transition-colors">
+            <td class="p-md">
+              <p class="font-bold">${r.name}</p>
+              <p class="font-label-sm text-label-sm text-on-surface-variant">${r.class}</p>
+            </td>
+            <td class="p-md font-data-mono font-bold">${r.symbol}</td>
+            <td class="p-md font-data-mono">${r.timeframe}</td>
+            <td class="p-md">
+              <label class="inline-flex items-center cursor-pointer">
+                <input type="checkbox" ${r.enabled ? "checked" : ""}
+                       onchange="toggle('${r.name}', this.checked)"
+                       class="sr-only peer"/>
+                <div class="w-9 h-5 bg-outline-variant peer-checked:bg-primary rounded-full relative transition-colors">
+                  <div class="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4"></div>
+                </div>
+              </label>
+            </td>
+            <td class="p-md text-right font-data-mono">${r.bt_trades ?? "—"}</td>
+            <td class="p-md text-right font-data-mono">${r.bt_win_rate ? r.bt_win_rate + "%" : "—"}</td>
+            <td class="p-md text-right font-data-mono">${r.bt_expectancy != null ? fmt.signed(r.bt_expectancy, 3) : "—"}</td>
+            <td class="p-md text-right font-data-mono ${profitable ? "text-gain" : (r.bt_total_R == null ? "" : "text-loss")} font-bold">
+              ${r.bt_total_R != null ? fmt.signed(r.bt_total_R) + " R" : "—"}
+            </td>
+            <td class="p-md font-label-sm">
+              <span class="text-on-surface-variant">${r.trades_today || 0} trades</span>
+            </td>
+          </tr>`;
+        }).join("");
+    }
+    paint();
+    document.getElementById("filter").oninput = e => paint(e.target.value);
+  }
+
+  window.toggle = async (name, enabled) => {
+    await fetch("/api/strategy/toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, enabled }),
+    });
+  };
+
+  refresh();
+  setInterval(refresh, 10000);
+</script>
+</body></html>

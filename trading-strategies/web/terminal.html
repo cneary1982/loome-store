@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>Terminal · Loomi.AI</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="_tailwind.js"></script>
+<style>body{background:#f9f9f9;color:#1a1c1c;font-family:Inter,sans-serif}.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400}</style>
+</head>
+<body>
+<main id="main" class="ml-64 p-margin max-w-7xl"></main>
+<script src="_layout.js"></script>
+<script>
+  renderLayout({ active: "Terminal", title: "Manual Terminal" });
+
+  document.getElementById("main").innerHTML = `
+    <div class="grid grid-cols-12 gap-md">
+      <!-- Manual override panel -->
+      <div class="col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+        <h3 class="font-headline-md text-headline-md mb-md">Manual Override</h3>
+        <p class="text-on-surface-variant mb-md">
+          Manual entries bypass strategy logic but still respect the global session window and risk caps.
+          For most workflows, prefer toggling strategies in the
+          <a href="strategies.html" class="text-primary underline">Strategies tab</a>.
+        </p>
+        <div class="grid grid-cols-2 gap-md">
+          <div>
+            <label class="font-label-sm text-label-sm text-on-surface-variant mb-xs block uppercase">Symbol</label>
+            <input id="sym" value="SPY" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/>
+          </div>
+          <div>
+            <label class="font-label-sm text-label-sm text-on-surface-variant mb-xs block uppercase">Side</label>
+            <select id="side" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm">
+              <option value="long">Long</option><option value="short">Short</option>
+            </select>
+          </div>
+          <div>
+            <label class="font-label-sm text-label-sm text-on-surface-variant mb-xs block uppercase">Shares</label>
+            <input id="shares" type="number" value="1" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/>
+          </div>
+          <div>
+            <label class="font-label-sm text-label-sm text-on-surface-variant mb-xs block uppercase">Stop ($ from entry)</label>
+            <input id="sl" type="number" value="1.00" step="0.01" class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/>
+          </div>
+        </div>
+        <button onclick="alert('Manual order endpoint not wired yet — coming next sprint.')"
+          class="w-full mt-md py-md bg-primary text-on-primary rounded-xl font-bold hover:opacity-90">
+          Submit Order (disabled — placeholder)
+        </button>
+      </div>
+
+      <!-- Emergency controls -->
+      <div class="col-span-4 bg-error/5 border border-error/30 rounded-xl p-md">
+        <h3 class="font-headline-md text-headline-md text-error mb-md">Emergency Controls</h3>
+        <button id="kill" class="w-full py-md bg-error text-on-error rounded-xl font-bold mb-sm hover:opacity-90">
+          🛑 Halt All Strategies
+        </button>
+        <button id="clear" class="w-full py-md border border-outline rounded-xl font-bold hover:bg-surface-container-low">
+          Clear Halt
+        </button>
+        <p class="mt-md font-label-sm text-label-sm text-on-surface-variant">
+          The halt command is written to <code>commands.json</code>; the orchestrator reads it on its next tick (≤5s).
+        </p>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("kill").onclick = async () => {
+    if (!confirm("HALT ALL TRADING?")) return;
+    await fetch("/api/killswitch", { method: "POST" });
+    alert("Halt signal sent.");
+  };
+  document.getElementById("clear").onclick = async () => {
+    await fetch("/api/clear_halt", { method: "POST" });
+    alert("Clear signal sent.");
+  };
+</script>
+</body></html>

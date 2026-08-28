@@ -1,0 +1,7 @@
+strategy,symbol,timeframe,trades,win_rate,expectancy,total_R
+ConnorsRSI2,SPY,15m,356,37.1,0.112,40.0
+ConnorsRSI2,QQQ,15m,359,34.8,0.045,16.0
+ConnorsRSI2,GLD,15m,340,38.2,0.147,50.0
+OpeningRangeBreakout,SPY,5m,409,44.5,0.112,46.0
+OpeningRangeBreakout,QQQ,5m,376,45.5,0.137,51.5
+OpeningRangeBreakout,GLD,5m,414,44.0,0.099,41.0

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>Settings · Loomi.AI</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="_tailwind.js"></script>
+<style>body{background:#f9f9f9;color:#1a1c1c;font-family:Inter,sans-serif}.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400}</style>
+</head>
+<body>
+<main id="main" class="ml-64 p-margin max-w-4xl"></main>
+<script src="_layout.js"></script>
+<script>
+  renderLayout({ active: "Settings", title: "System Settings" });
+
+  async function refresh() {
+    const s = await (await fetch("/api/settings")).json();
+
+    document.getElementById("main").innerHTML = `
+      <div class="space-y-md">
+        <section class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+          <h3 class="font-headline-md text-headline-md mb-xs">Trading Window (ET)</h3>
+          <p class="text-on-surface-variant mb-md">Global gate applied to every strategy. Entries are only accepted inside this window; positions are force-flat at EOD.</p>
+          <div class="grid grid-cols-3 gap-md">
+            ${input("start", "Entry Start", s.entry_window_start_ny, "9.5 = 9:30 AM ET")}
+            ${input("end",   "Entry End",   s.entry_window_end_ny,   "13.0 = 1:00 PM ET")}
+            ${input("eod",   "EOD Flat",    s.eod_flat_ny,           "16.0 = 4:00 PM ET")}
+          </div>
+        </section>
+
+        <section class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+          <h3 class="font-headline-md text-headline-md mb-xs">Risk</h3>
+          <p class="text-on-surface-variant mb-md">Dollars at risk per trade and the daily cap before the orchestrator auto-halts.</p>
+          <div class="grid grid-cols-2 gap-md">
+            ${input("risk", "Risk per Trade ($)",     s.risk_per_trade_dollars, "Used by shares_for_risk()")}
+            ${input("maxdd","Max Daily Loss ($)",     s.max_daily_loss_dollars, "Auto-halt threshold")}
+          </div>
+        </section>
+
+        <section class="bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+          <h3 class="font-headline-md text-headline-md mb-xs">Broker</h3>
+          <div>
+            <label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">Tradier Environment</label>
+            <select id="env" class="w-64 bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm">
+              <option value="sandbox" ${s.broker_env === "sandbox" ? "selected" : ""}>Sandbox (paper)</option>
+              <option value="live" ${s.broker_env === "live" ? "selected" : ""}>Live (real money)</option>
+            </select>
+            ${s.broker_env === "live"
+              ? `<p class="mt-sm font-label-sm text-label-sm text-error font-bold">⚠ Live mode: orders place real money at risk.</p>`
+              : `<p class="mt-sm font-label-sm text-label-sm text-on-surface-variant">Paper trading — safe.</p>`}
+          </div>
+        </section>
+
+        <button id="save" class="px-md py-sm bg-primary text-on-primary rounded-lg font-bold">Save Settings</button>
+        <span id="msg" class="ml-md font-label-sm text-label-sm"></span>
+      </div>
+    `;
+
+    document.getElementById("save").onclick = async () => {
+      const body = {
+        entry_window_start_ny: +document.getElementById("start").value,
+        entry_window_end_ny:   +document.getElementById("end").value,
+        eod_flat_ny:           +document.getElementById("eod").value,
+        risk_per_trade_dollars:+document.getElementById("risk").value,
+        max_daily_loss_dollars:+document.getElementById("maxdd").value,
+        broker_env:             document.getElementById("env").value,
+      };
+      const r = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      document.getElementById("msg").textContent = r.ok ? "✓ Saved (orchestrator restart required for some changes)" : "✗ Failed";
+    };
+  }
+
+  function input(id, label, val, hint) {
+    return `
+      <div>
+        <label class="font-label-sm text-label-sm text-on-surface-variant uppercase mb-xs block">${label}</label>
+        <input id="${id}" type="number" step="0.5" value="${val}"
+          class="w-full bg-surface-container-low border border-outline-variant rounded-lg px-md py-sm font-data-mono"/>
+        <p class="font-label-sm text-label-sm text-on-surface-variant mt-xs">${hint}</p>
+      </div>`;
+  }
+
+  refresh();
+</script>
+</body></html>

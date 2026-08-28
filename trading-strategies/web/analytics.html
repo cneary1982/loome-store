@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>Analytics · Loomi.AI</title>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="_tailwind.js"></script>
+<style>body{background:#f9f9f9;color:#1a1c1c;font-family:Inter,sans-serif}.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 400}</style>
+</head>
+<body>
+<main id="main" class="ml-64 p-margin max-w-7xl"></main>
+<script src="_layout.js"></script>
+<script>
+  renderLayout({ active: "Analytics", title: "Performance Analytics" });
+
+  function svgPath(points, w, h) {
+    if (points.length < 2) return "";
+    const min = Math.min(0, ...points);
+    const max = Math.max(0, ...points);
+    const range = (max - min) || 1;
+    return points.map((p, i) => {
+      const x = (i / (points.length - 1)) * w;
+      const y = h - ((p - min) / range) * h;
+      return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(" ");
+  }
+
+  async function refresh() {
+    const r = await (await fetch("/api/analytics")).json();
+    const curve = r.equity_curve || [];
+    const byS = r.by_strategy || [];
+
+    const W = 1000, H = 280;
+    const pts = curve.map(p => +p.equity);
+    const path = svgPath(pts, W, H);
+    const last = pts.length ? pts[pts.length - 1] : 0;
+
+    document.getElementById("main").innerHTML = `
+      <div class="grid grid-cols-12 gap-md mb-md">
+        <div class="col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl p-md">
+          <div class="flex justify-between mb-sm">
+            <h3 class="font-headline-md text-headline-md">Equity Curve</h3>
+            <p class="font-data-mono text-data-mono font-bold ${last >= 0 ? "text-gain" : "text-loss"}">${fmt.money(last)}</p>
+          </div>
+          <p class="font-label-sm text-label-sm text-on-surface-variant mb-md">Cumulative P&L from closed trades</p>
+          <svg viewBox="0 0 ${W} ${H}" class="w-full" style="max-height:280px">
+            <path d="${path}" fill="none" stroke="#000" stroke-width="2"/>
+            <line x1="0" x2="${W}" y1="${H/2}" y2="${H/2}" stroke="#c6c6cd" stroke-dasharray="2,4"/>
+          </svg>
+        </div>
+        <div class="col-span-4 bg-primary text-on-primary rounded-xl p-md">
+          <p class="font-label-sm text-label-sm opacity-70 uppercase tracking-widest mb-md">Session Totals</p>
+          <div class="space-y-md">
+            <div>
+              <p class="opacity-60">Closed Trades</p>
+              <p class="font-headline-md text-headline-md font-bold">${curve.length}</p>
+            </div>
+            <div>
+              <p class="opacity-60">Net P&L</p>
+              <p class="font-headline-md text-headline-md font-bold ${last >= 0 ? "text-tertiary-fixed" : "text-error-container"}">${fmt.money(last)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden">
+        <div class="p-md border-b border-outline-variant">
+          <h4 class="font-label-md text-label-md uppercase tracking-widest">Per-Strategy Performance</h4>
+        </div>
+        ${byS.length === 0
+          ? `<div class="p-md text-on-surface-variant italic">No closed trades yet.</div>`
+          : `<table class="w-full text-left">
+              <thead class="bg-surface-container-low text-[10px] uppercase text-on-surface-variant tracking-widest">
+                <tr>
+                  <th class="p-md">Strategy</th>
+                  <th class="p-md text-right">Trades</th>
+                  <th class="p-md text-right">Wins</th>
+                  <th class="p-md text-right">Win Rate</th>
+                  <th class="p-md text-right">P&L</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-outline-variant/20">
+                ${byS.sort((a,b) => b.pnl - a.pnl).map(s => `
+                  <tr class="hover:bg-surface-container-low transition-colors">
+                    <td class="p-md font-bold">${s.strategy}</td>
+                    <td class="p-md text-right font-data-mono">${s.trades}</td>
+                    <td class="p-md text-right font-data-mono">${s.wins}</td>
+                    <td class="p-md text-right font-data-mono">${fmt.pct(s.win_rate)}</td>
+                    <td class="p-md text-right font-data-mono font-bold ${s.pnl >= 0 ? "text-gain" : "text-loss"}">${fmt.money(s.pnl)}</td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>`}
+      </div>
+    `;
+  }
+
+  refresh();
+  setInterval(refresh, 10000);
+</script>
+</body></html>
