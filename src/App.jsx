@@ -418,13 +418,16 @@ function Header({cart,nav,setSearch,setCat,user,setShowLogin,setUser}){
     <div style={{background:C.iron,position:"sticky",top:0,zIndex:900,boxShadow:"0 2px 8px rgba(0,0,0,.2)"}}>
       <div style={{maxWidth:1380,margin:"0 auto",display:"flex",alignItems:"center",gap:14,height:58,padding:"0 16px"}}>
         <div onClick={()=>nav("home")}><Logo/></div>
-        <select onChange={e=>{setCat(e.target.value);nav("home");}} style={{padding:"6px 9px",background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",borderRadius:4,color:C.white,fontSize:11,cursor:"pointer",flexShrink:0}}>
+        <select className="hdr-dept" onChange={e=>{setCat(e.target.value);nav("home");}} style={{padding:"6px 9px",background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.2)",borderRadius:4,color:C.white,fontSize:11,cursor:"pointer",flexShrink:0}}>
           <option value="All">All Departments</option>
           {CATS.map(c=><option key={c.id} value={c.id}>{c.id}</option>)}
         </select>
-        <form onSubmit={e=>{e.preventDefault();setSearch(q);nav("home");}} style={{flex:1,display:"flex",maxWidth:600}}>
+        {/* minWidth:0 on both -- an <input> has an intrinsic min-width, so without it
+            this form refused to shrink and shoved the Cart button off the right edge
+            of a phone screen, leaving no way to reach the cart at all. */}
+        <form onSubmit={e=>{e.preventDefault();setSearch(q);nav("home");}} style={{flex:1,minWidth:0,display:"flex",maxWidth:600}}>
           <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search LOOME finds..."
-            style={{flex:1,padding:"9px 14px",border:"none",borderRadius:"4px 0 0 4px",fontSize:13,outline:"none",background:C.white,color:C.dark}}/>
+            style={{flex:1,minWidth:0,padding:"9px 14px",border:"none",borderRadius:"4px 0 0 4px",fontSize:13,outline:"none",background:C.white,color:C.dark}}/>
           <button type="submit" style={{padding:"9px 14px",background:C.sage,border:"none",borderRadius:"0 4px 4px 0",color:C.white,cursor:"pointer",display:"flex",alignItems:"center"}}>
             <Icon name="search" size={16} color={C.white} sw={2.2}/>
           </button>
@@ -453,9 +456,12 @@ function Header({cart,nav,setSearch,setCat,user,setShowLogin,setUser}){
         </div>
       </div>
       <div style={{background:C.ironL,padding:"0 16px"}}>
-        <div style={{maxWidth:1380,margin:"0 auto",display:"flex",height:32,overflowX:"auto",gap:0}}>
+        {/* width:100%/minWidth:0 make overflowX actually scroll this strip. Without
+            them the nowrap buttons widened the whole page to ~600px on a phone, which
+            dragged the layout sideways and put the header's Cart button out of reach. */}
+        <div style={{width:"100%",minWidth:0,maxWidth:1380,margin:"0 auto",display:"flex",height:32,overflowX:"auto",gap:0}}>
           {["Today's Deals","Under $10","New Arrivals","Subscribe & Save",...CATS.map(c=>c.id)].map((c,i)=>(
-            <button key={c} onClick={()=>{setCat(i<4?"All":c);nav("home");}} style={{padding:"0 13px",background:"transparent",border:"none",borderBottom:"2px solid transparent",color:"rgba(255,255,255,.7)",cursor:"pointer",fontSize:11,height:"100%",whiteSpace:"nowrap",transition:"all .15s",fontWeight:i<4?600:400}}
+            <button key={c} onClick={()=>{setCat(i<4?"All":c);nav("home");}} style={{flexShrink:0,padding:"0 13px",background:"transparent",border:"none",borderBottom:"2px solid transparent",color:"rgba(255,255,255,.7)",cursor:"pointer",fontSize:11,height:"100%",whiteSpace:"nowrap",transition:"all .15s",fontWeight:i<4?600:400}}
               onMouseEnter={e=>{e.currentTarget.style.color=C.white;e.currentTarget.style.borderBottomColor=C.white;}}
               onMouseLeave={e=>{e.currentTarget.style.color="rgba(255,255,255,.7)";e.currentTarget.style.borderBottomColor="transparent";}}>
               {c}
@@ -783,7 +789,7 @@ function Cart({cart,setCart,nav,user,setShowLogin,setBuyNowProduct}){
   return(
     <div style={{width:"100%",background:C.pageBg,minHeight:"80vh",padding:"16px",display:"flex",justifyContent:"center"}}>
       <div style={{width:"100%",maxWidth:1180}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:18,alignItems:"start"}}>
+        <div className="cart-grid">
           <div>
             <div style={{fontSize:24,fontWeight:400,color:C.dark,marginBottom:16,borderBottom:`1px solid ${C.border}`,paddingBottom:12}}>Shopping Cart</div>
             {cart.length===0?(
@@ -800,7 +806,7 @@ function Cart({cart,setCart,nav,user,setShowLogin,setBuyNowProduct}){
                     <div onClick={()=>nav(`product:${item.id}`)} style={{width:100,height:100,background:C.imgBg,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0,border:`1px solid ${C.borderL}`}}>
                       <Icon name={catIcon(item.category)} size={44} color="#BBBBBB" sw={1}/>
                     </div>
-                    <div style={{flex:1}}>
+                    <div style={{flex:1,minWidth:0}}>
                       <div onClick={()=>nav(`product:${item.id}`)} style={{fontSize:14,fontWeight:400,color:"#007185",cursor:"pointer",marginBottom:4,lineHeight:1.4}}>{item.name}</div>
                       <div style={{fontSize:12,color:C.green,fontWeight:600,marginBottom:8}}>In Stock · FREE delivery {item.shipDay}</div>
                       <div style={{display:"flex",gap:10,alignItems:"center"}}>
@@ -825,12 +831,20 @@ function Cart({cart,setCart,nav,user,setShowLogin,setBuyNowProduct}){
                   Subtotal ({cart.reduce((s,i)=>s+i.qty,0)} items): <strong>${sub.toFixed(2)}</strong>
                   {saved>0&&<div style={{fontSize:12,color:C.limitedDeal}}>Your savings: ${saved.toFixed(2)}</div>}
                 </div>
+                {/* Second checkout entry point. Checkout used to exist only in the
+                    side summary, so anyone who missed that panel had no way out
+                    of the cart but the upsell rows. */}
+                <div style={{padding:"0 16px 16px"}}>
+                  <button onClick={()=>nav("checkout")} style={{width:"100%",padding:"11px",background:C.buyNow,border:"none",borderRadius:20,fontWeight:800,cursor:"pointer",fontSize:14,color:C.dark,boxShadow:"0 2px 8px rgba(255,164,28,.35)"}}>
+                    Proceed to Checkout
+                  </button>
+                </div>
               </div>
             )}
           </div>
 
           {/* Summary */}
-          {cart.length>0&&<div style={{background:C.white,borderRadius:8,padding:16,border:`1px solid ${C.border}`,position:"sticky",top:82}}>
+          {cart.length>0&&<div className="cart-summary" style={{background:C.white,borderRadius:8,padding:16,border:`1px solid ${C.border}`,position:"sticky",top:82}}>
             <div style={{fontSize:12,color:C.green,fontWeight:600,marginBottom:12}}>Your order qualifies for FREE Shipping.</div>
             <div style={{fontSize:16,fontWeight:700,color:C.dark,marginBottom:14}}>
               Subtotal ({cart.reduce((s,i)=>s+i.qty,0)} items): <span style={{color:C.dark}}>${sub.toFixed(2)}</span>
@@ -1107,7 +1121,7 @@ function Footer({nav}){
   return(
     <footer style={{background:C.iron,padding:"32px 16px 16px"}}>
       <div style={{maxWidth:1380,margin:"0 auto"}}>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1.3fr",gap:24,marginBottom:24}}>
+        <div className="footer-grid">
           <div>
             <div style={{marginBottom:10,cursor:"pointer"}} onClick={()=>nav("home")}><Logo/></div>
             <div style={{fontSize:12,color:"rgba(255,255,255,.5)",lineHeight:1.8,marginBottom:14}}>Find it before everyone else. Trending products at unbeatable prices, updated daily by AI.</div>
@@ -1139,16 +1153,23 @@ function Footer({nav}){
   );
 }
 
-function Toast({msg}){
+function Toast({msg,onView}){
   return msg?<div style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:C.iron,color:C.white,padding:"9px 18px",borderRadius:20,fontSize:12,fontWeight:600,zIndex:9999,boxShadow:"0 4px 18px rgba(0,0,0,.2)",display:"flex",alignItems:"center",gap:7,whiteSpace:"nowrap"}}>
     <Icon name="check" size={12} color={C.sage} sw={2.5}/> {msg}
+    {/* Adding an item used to lead nowhere but the related-products rows. */}
+    {onView&&<button onClick={onView} style={{marginLeft:4,background:"transparent",border:"none",color:C.wheat,fontSize:12,fontWeight:700,cursor:"pointer",textDecoration:"underline",padding:0}}>View cart</button>}
   </div>:null;
 }
 
 // ── APP ───────────────────────────────────────────────────────────────────────
 export default function LooMeStore(){
   const [page,setPage]=useState("home");
-  const [cart,setCart]=useState([]);
+  // Persisted the same way `user` is. The cart used to live in state only, so
+  // closing the tab or clicking away emptied a full cart with no warning.
+  const [cart,setCart]=useState(()=>{
+    try{const s=JSON.parse(localStorage.getItem("loome_cart")||"[]");return Array.isArray(s)?s:[];}
+    catch{return [];}
+  });
   const [cat,setCat]=useState("All");
   const [search,setSearch]=useState("");
   const [toast,setToast]=useState("");
@@ -1163,6 +1184,11 @@ export default function LooMeStore(){
     setTimeout(()=>setToast(""),2200);
   };
 
+  useEffect(()=>{
+    try{localStorage.setItem("loome_cart",JSON.stringify(cart));}
+    catch{/* private mode or blocked storage -- cart still works for this visit */}
+  },[cart]);
+
   const pid=page.startsWith("product:")?+page.split(":")[1]:null;
 
   return(
@@ -1174,6 +1200,24 @@ export default function LooMeStore(){
         body,button,input,select{font-family:'DM Sans',sans-serif;}
         ::-webkit-scrollbar{width:5px;height:5px;}
         ::-webkit-scrollbar-thumb{background:#CCCCCC;border-radius:3px;}
+        /* The order summary -- which holds the only Proceed to Checkout button --
+           sat in a fixed 300px column. On a phone that column was crushed against
+           the item list and the button was unreachable. Stack it under the items. */
+        .cart-grid{display:grid;grid-template-columns:1fr 300px;gap:18px;align-items:start;}
+        @media (max-width:820px){
+          /* minmax(0,1fr), not 1fr: a 1fr track takes its min-width from the item
+             row's min-content and overflowed the page on a phone. */
+          .cart-grid{grid-template-columns:minmax(0,1fr);}
+          .cart-grid .cart-summary{position:static;}
+        }
+        /* The department dropdown duplicates the category strip below it and is the
+           last thing worth the width on a phone. */
+        @media (max-width:700px){ .hdr-dept{display:none;} }
+        /* Five fixed columns plus an email input could not fit a phone, so the
+           footer dragged the whole page sideways. */
+        .footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1.3fr;gap:24px;margin-bottom:24px;}
+        @media (max-width:820px){ .footer-grid{grid-template-columns:1fr 1fr;gap:20px;} }
+        @media (max-width:460px){ .footer-grid{grid-template-columns:1fr;} }
       `}</style>
 
       <Header cart={cart} nav={nav} setSearch={s=>{setSearch(s);nav("home");}} setCat={c=>{setCat(c);}} user={user} setShowLogin={setShowLogin} setUser={setUser}/>
@@ -1188,7 +1232,7 @@ export default function LooMeStore(){
       {page==="account"&&<Account nav={nav} user={user} setUser={setUser} setShowLogin={setShowLogin}/>}
 
       <Footer nav={nav}/>
-      <Toast msg={toast}/>
+      <Toast msg={toast} onView={toast.includes("added to cart")?()=>{setToast("");nav("cart");}:null}/>
 
       {showLogin&&<LoginModal onClose={()=>setShowLogin(false)} setUser={setUser} setToast={(m)=>{setToast(m);setTimeout(()=>setToast(""),3000);}}/>}
       {buyNowProduct&&<BuyNowModal product={buyNowProduct} user={user} setUser={setUser} onClose={()=>setBuyNowProduct(null)} setPage={setPage}/>}
